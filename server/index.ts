@@ -8,7 +8,7 @@ export interface StartOptions {
   host: string;
   port: number;
   open: boolean;
-  command: "start" | "token";
+  command: "start" | "token" | "help";
   rotate: boolean;
 }
 
@@ -22,7 +22,9 @@ export function parseArgs(argv: string[]): StartOptions {
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === "start" || arg === "token") {
+    if (arg === "--help" || arg === "-h") {
+      opts.command = "help";
+    } else if (arg === "start" || arg === "token") {
       opts.command = arg;
     } else if (arg === "--rotate") {
       opts.rotate = true;
@@ -55,6 +57,20 @@ export async function main(argv: string[]): Promise<void> {
   const opts = parseArgs(argv);
   const stateDir = defaultStateDir();
   let config = await loadConfig(stateDir);
+
+  if (opts.command === "help") {
+    console.log(
+      [
+        `${PRODUCT_NAME} — local orchestrator for parallel Claude Code and Codex sessions`,
+        "",
+        "Usage: ensemble [start] [--host <addr>] [--port <n>] [--no-open]",
+        "       ensemble token [--rotate]      print (or rotate) the login URL",
+        "",
+        "State lives in ~/.ensemble (override with ENSEMBLE_STATE_DIR).",
+      ].join("\n"),
+    );
+    return;
+  }
 
   if (opts.command === "token") {
     if (opts.rotate) {

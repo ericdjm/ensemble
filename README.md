@@ -2,7 +2,7 @@
 
 A local web app for macOS that runs multiple coding-agent sessions (Claude Code and Codex) in parallel, each in its own isolated git worktree, with a browser UI to monitor, steer, review, and ship their work. A self-hosted alternative to Conductor.
 
-**Status:** under construction. See [docs/architecture.md](docs/architecture.md) for the plan and milestones, and [docs/cli-notes.md](docs/cli-notes.md) for what has been verified against the installed CLIs.
+**Status:** v1 feature-complete per the build spec. See [docs/architecture.md](docs/architecture.md) for the design, [docs/cli-notes.md](docs/cli-notes.md) for what was verified against the installed CLIs, and [docs/acceptance.md](docs/acceptance.md) for which acceptance items are verified automatically, by hand, or still need you.
 
 ## Requirements
 
@@ -29,8 +29,6 @@ tmux -L ensemble attach -t ens-<session-id-prefix>
 ```
 
 The Doctor page (top of the sidebar) shows which binaries were found, whether `gh` is logged in, and the state of the loopback hook listener. A version check only proves a binary runs; it does not prove that it is logged in.
-
-Status: milestones M0–M2 are implemented (repos, workspaces, archive, tmux-backed sessions with subscription preflight, terminal, resume, doctor). Live tool-event status, diff review, the PR flow, Remote Control polish and the mobile layout follow in M3–M7.
 
 ## Your subscription and credentials
 

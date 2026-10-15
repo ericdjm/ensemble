@@ -1,6 +1,6 @@
 # Ensemble architecture
 
-Status: **approved with changes** by the owner on October 14, 2026. This revision incorporates the six review fixes and the recorded decisions in §11. Written against `ensemble-build-spec.md` and the verification results in `docs/cli-notes.md`.
+Status: **approved with changes** by the owner on October 14, 2026 and implemented through M7 by October 15, 2026. This revision incorporates the six review fixes and the recorded decisions in §11; `docs/acceptance.md` records verification status. Written against `ensemble-build-spec.md` and the verification results in `docs/cli-notes.md`.
 
 The spec is the source of truth. This document explains how it will be met.
 

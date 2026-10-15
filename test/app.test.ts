@@ -101,6 +101,9 @@ describe("parseArgs", () => {
       open: false,
     });
   });
+  it("recognises --help", () => {
+    expect(parseArgs(["--help"]).command).toBe("help");
+  });
   it("rejects bad ports and unknown flags", () => {
     expect(() => parseArgs(["--port", "nope"])).toThrow();
     expect(() => parseArgs(["--bogus"])).toThrow();
