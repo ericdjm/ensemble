@@ -24,6 +24,7 @@ import type {
   CreationState,
   Workspace,
   WorkspaceStatus,
+  RunState,
 } from "../shared/types.js";
 export type { WorkspaceStatus, Agent, CreationRequest, CreationState, Workspace };
 
@@ -444,6 +445,48 @@ export class WorkspaceService extends EventEmitter {
 
   setError(id: string, error: string | null): Workspace {
     return this.update(id, { error });
+  }
+
+  /** Run-script session state (docs §5.1 "Run tab"). */
+  async runState(id: string): Promise<RunState> {
+    const ws = this.get(id);
+    const repo = getRepo(this.db, ws.repoId);
+    const eff = repo ? effectiveRepoConfig(this.db, repo) : null;
+    const run = eff?.scripts.find((s) => s.kind === "run");
+    const pane = await this.tmux.pane(runSessionName(id));
+    return {
+      running: !!pane && !pane.dead,
+      exitCode: pane?.dead ? pane.deadStatus : null,
+      script: run?.script ?? null,
+      approved: run?.approved ?? false,
+    };
+  }
+
+  async startRun(id: string): Promise<RunState> {
+    const ws = this.get(id);
+    if (ws.status !== "ready") throw new WorkspaceError("workspace is not ready", 409);
+    const repo = getRepo(this.db, ws.repoId);
+    if (!repo) throw new WorkspaceError("repo not found", 404);
+    const run = effectiveRepoConfig(this.db, repo).scripts.find((s) => s.kind === "run");
+    if (!run || run.script === null) throw new WorkspaceError("this repo has no run script", 409);
+    if (!run.approved) throw new WorkspaceError("the run script is not approved", 409);
+    const name = runSessionName(id);
+    const pane = await this.tmux.pane(name);
+    if (pane && !pane.dead) return this.runState(id);
+    await this.tmux.killSession(name);
+    await this.tmux.newSession({
+      name,
+      cwd: ws.path,
+      env: scriptEnv(ws, repo),
+      command: [process.env["SHELL"] ?? "/bin/zsh", "-lc", run.script],
+    });
+    return this.runState(id);
+  }
+
+  async stopRun(id: string): Promise<RunState> {
+    this.get(id);
+    await this.tmux.killSession(runSessionName(id));
+    return this.runState(id);
   }
 
   rename(id: string, newName: string): Workspace {

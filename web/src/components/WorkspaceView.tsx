@@ -6,6 +6,8 @@ import { SetupLog } from "./SetupLog.js";
 import { StatusBadge } from "./StatusBadge.js";
 import { SessionsTab } from "./SessionsTab.js";
 import { EventsTab } from "./EventsTab.js";
+import { DiffTab } from "./DiffTab.js";
+import { RunTab } from "./RunTab.js";
 import { useUiState } from "../store.js";
 
 type Tab = "sessions" | "run" | "setup" | "diff" | "events" | "pr";
@@ -146,17 +148,23 @@ export function WorkspaceView({
         {tab === "sessions" && (
           <SessionsTab workspace={workspace} defaultAgent={workspace.creation.request.agent} />
         )}
+        {tab === "diff" && <DiffTab workspace={workspace} />}
+        {tab === "run" && <RunTab workspace={workspace} />}
         {tab === "events" &&
           (latestSession ? (
             <EventsTab session={latestSession} />
           ) : (
             <p className="p-4 text-sm text-neutral-500">No sessions yet.</p>
           ))}
-        {tab !== "setup" && tab !== "sessions" && tab !== "events" && (
-          <p className="p-4 text-sm text-neutral-500">
-            {TABS.find((t) => t.id === tab)?.label} arrives in a later milestone.
-          </p>
-        )}
+        {tab !== "setup" &&
+          tab !== "sessions" &&
+          tab !== "events" &&
+          tab !== "diff" &&
+          tab !== "run" && (
+            <p className="p-4 text-sm text-neutral-500">
+              {TABS.find((t) => t.id === tab)?.label} arrives in a later milestone.
+            </p>
+          )}
       </div>
     </div>
   );

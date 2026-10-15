@@ -18,6 +18,7 @@ import type { HookListener } from "./hooks/listener.js";
 import type { Tmux } from "./tmux.js";
 import { doctorReport } from "./doctor.js";
 import { summarizeEvent } from "./hooks/summary.js";
+import { formatLineComment, workspaceDiff } from "./diff.js";
 import { saveConfig, type Config } from "./config.js";
 import type { SettingsView } from "../shared/types.js";
 import { writeFileSync } from "node:fs";
@@ -602,5 +603,59 @@ export function registerRoutes(app: FastifyInstance, s: Services): void {
     "/api/sessions/:id/events",
     { schema: { params: idParam } },
     async (request) => s.sessions.clearEvents(request.params.id),
+  );
+  app.get<{ Params: { id: string } }>(
+    "/api/workspaces/:id/diff",
+    { schema: { params: idParam } },
+    async (request) => {
+      const ws = s.workspaces.get(request.params.id);
+      if (ws.status === "archived" || !ws.creation.steps.worktree)
+        throw new WorkspaceError("workspace has no worktree", 409);
+      return workspaceDiff(ws.path, ws.baseBranch);
+    },
+  );
+
+  app.get<{ Params: { id: string } }>(
+    "/api/workspaces/:id/run",
+    { schema: { params: idParam } },
+    async (request) => s.workspaces.runState(request.params.id),
+  );
+  app.post<{ Params: { id: string } }>(
+    "/api/workspaces/:id/run",
+    { schema: { params: idParam } },
+    async (request) => s.workspaces.startRun(request.params.id),
+  );
+  app.delete<{ Params: { id: string } }>(
+    "/api/workspaces/:id/run",
+    { schema: { params: idParam } },
+    async (request) => s.workspaces.stopRun(request.params.id),
+  );
+
+  app.post<{
+    Params: { id: string };
+    Body: { path: string; from: number; to: number; text: string };
+  }>(
+    "/api/sessions/:id/comment",
+    {
+      schema: {
+        params: idParam,
+        body: {
+          type: "object",
+          required: ["path", "from", "to", "text"],
+          properties: {
+            path: { type: "string", minLength: 1, maxLength: 4096 },
+            from: { type: "integer", minimum: 1 },
+            to: { type: "integer", minimum: 1 },
+            text: { type: "string", minLength: 1, maxLength: 20000 },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const b = request.body;
+      const [from, to] = b.from <= b.to ? [b.from, b.to] : [b.to, b.from];
+      await s.sessions.input(request.params.id, formatLineComment(b.path, from, to, b.text));
+      return reply.code(204).send();
+    },
   );
 }

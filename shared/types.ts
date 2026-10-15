@@ -253,3 +253,25 @@ export interface SettingsView {
   branchPrefix: string;
   portBase: number;
 }
+
+export interface DiffFile {
+  path: string;
+  oldPath?: string;
+  status: "added" | "modified" | "deleted" | "renamed" | "untracked" | "binary";
+  additions: number;
+  deletions: number;
+  diff: string;
+}
+
+export interface WorkspaceDiff {
+  base: string;
+  baseBranch: string;
+  files: DiffFile[];
+}
+
+export interface RunState {
+  running: boolean;
+  exitCode: number | null;
+  script: string | null;
+  approved: boolean;
+}

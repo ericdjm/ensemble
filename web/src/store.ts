@@ -79,6 +79,20 @@ function updateTitle(): void {
 }
 
 const eventListeners = new Map<string, Set<(ev: EventSummary) => void>>();
+const diffListeners = new Map<string, Set<() => void>>();
+
+/** Fires when the server reports file changes or a Stop hook for a workspace. */
+export function subscribeDiff(workspaceId: string, cb: () => void): () => void {
+  let set = diffListeners.get(workspaceId);
+  if (!set) {
+    set = new Set();
+    diffListeners.set(workspaceId, set);
+  }
+  set.add(cb);
+  return () => {
+    set?.delete(cb);
+  };
+}
 
 /** Per-session live event feed for the Events tab. */
 export function subscribeEvents(sessionId: string, cb: (ev: EventSummary) => void): () => void {
@@ -150,6 +164,9 @@ export function applyMessage(msg: ServerMessage): void {
           },
         });
       }
+      break;
+    case "diff.changed":
+      for (const cb of diffListeners.get(msg.workspaceId) ?? []) cb();
       break;
     case "event.appended":
       for (const cb of eventListeners.get(msg.sessionId) ?? []) cb(msg.event);

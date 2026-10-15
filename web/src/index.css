@@ -25,3 +25,39 @@ body {
     @apply rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50;
   }
 }
+
+/* react-diff-view theme: readable in both schemes, following the system setting. */
+.diff {
+  --diff-background-color: transparent;
+  --diff-text-color: inherit;
+  --diff-font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --diff-selection-background-color: #fde68a;
+  --diff-gutter-insert-background-color: #d1fae5;
+  --diff-gutter-delete-background-color: #fee2e2;
+  --diff-gutter-selected-background-color: #fde68a;
+  --diff-code-insert-background-color: #ecfdf5;
+  --diff-code-delete-background-color: #fef2f2;
+  --diff-code-insert-edit-background-color: #a7f3d0;
+  --diff-code-delete-edit-background-color: #fecaca;
+  --diff-code-selected-background-color: #fef3c7;
+  --diff-omit-gutter-line-color: #a3a3a3;
+  font-size: 12px;
+}
+.diff-gutter {
+  cursor: pointer;
+  color: #737373;
+}
+@media (prefers-color-scheme: dark) {
+  .diff {
+    --diff-selection-background-color: #78350f;
+    --diff-gutter-insert-background-color: #064e3b;
+    --diff-gutter-delete-background-color: #7f1d1d;
+    --diff-gutter-selected-background-color: #78350f;
+    --diff-code-insert-background-color: #052e16;
+    --diff-code-delete-background-color: #450a0a;
+    --diff-code-insert-edit-background-color: #065f46;
+    --diff-code-delete-edit-background-color: #991b1b;
+    --diff-code-selected-background-color: #451a03;
+    --diff-omit-gutter-line-color: #525252;
+  }
+}

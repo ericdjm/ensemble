@@ -17,6 +17,7 @@ import { SessionService } from "./sessions.js";
 import { registerTerminalBridge } from "./terminal.js";
 import { Tmux } from "./tmux.js";
 import { WorkspaceService } from "./workspaces.js";
+import { WorkspaceWatcher } from "./watch.js";
 import { StateHub } from "./ws.js";
 
 export interface AppOptions {
@@ -162,6 +163,17 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       },
     }),
   );
+  const watcher = new WorkspaceWatcher((workspaceId) =>
+    hub.broadcast({ t: "diff.changed", workspaceId }),
+  );
+  const syncWatchers = () => {
+    for (const ws of workspaces.list()) {
+      if (ws.status === "ready" || ws.status === "setup_failed") watcher.watch(ws.id, ws.path);
+      else void watcher.unwatch(ws.id);
+    }
+  };
+  workspaces.on("changed", syncWatchers);
+  syncWatchers();
   sessions.on("stop", (sessionId: string) => {
     try {
       hub.broadcast({ t: "diff.changed", workspaceId: sessions.get(sessionId).workspaceId });
@@ -197,6 +209,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   fastify.addHook("onClose", async () => {
     if (drainTimer) clearInterval(drainTimer);
     sessions.stopLiveness();
+    await watcher.closeAll();
     await listener.stop();
     hub.close();
   });
