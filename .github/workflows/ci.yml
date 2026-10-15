@@ -15,6 +15,9 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - name: Install tmux (required runtime dependency)
+        run: command -v tmux || brew install tmux
+      - run: tmux -V
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm lint
