@@ -14,6 +14,7 @@ import { REPO_CONFIG_FILENAME, type ScriptKind } from "./repo-config.js";
 import { WorkspaceError, type WorkspaceService } from "./workspaces.js";
 import { ArchiveConflict, type ArchiveDecisions, type ArchiveService } from "./archive.js";
 import { writeFileSync } from "node:fs";
+import { execFile } from "node:child_process";
 import path from "node:path";
 
 export interface Services {
@@ -282,6 +283,32 @@ export function registerRoutes(app: FastifyInstance, s: Services): void {
     { schema: { params: idParam } },
     async (request, reply) => {
       s.archive.deleteArchiveFiles(request.params.id);
+      return reply.code(204).send();
+    },
+  );
+  app.post<{ Params: { id: string }; Body: { app: "vscode" | "finder" } }>(
+    "/api/workspaces/:id/open",
+    {
+      schema: {
+        params: idParam,
+        body: {
+          type: "object",
+          required: ["app"],
+          properties: { app: { enum: ["vscode", "finder"] } },
+        },
+      },
+    },
+    async (request, reply) => {
+      const ws = s.workspaces.get(request.params.id);
+      if (process.platform !== "darwin")
+        return reply.code(501).send({ error: "only supported on macOS" });
+      const args =
+        request.body.app === "vscode" ? ["-a", "Visual Studio Code", ws.path] : ["-R", ws.path];
+      await new Promise<void>((resolve, reject) =>
+        execFile("open", args, (error) =>
+          error ? reject(new WorkspaceError(error.message, 500)) : resolve(),
+        ),
+      );
       return reply.code(204).send();
     },
   );
