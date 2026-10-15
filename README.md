@@ -44,6 +44,18 @@ Claude Code holds back hooks until you accept its workspace-trust prompt in the 
 
 **Codex limitations.** Codex's lifecycle hooks are injected with `-c` config overrides and must be trusted once through Codex's own `/hooks` command; Ensemble never bypasses that trust. Until trusted, only the `notify` fallback reports turn completion, so tool activity and permission prompts are not visible and needs-input detection is best-effort. The `-c` hook injection has not yet been verified against the installed Codex binary.
 
+## Phone access over Tailscale
+
+Bind the UI to your Tailscale address instead of loopback:
+
+```sh
+pnpm start -- --host 100.x.y.z
+```
+
+Only `127.0.0.1`, `localhost`, and the literal `--host` value (plus any `allowedHosts` entries in `~/.ensemble/config.json`, for a MagicDNS name) are accepted as the `Host` header; everything else gets a 421. The access token is still required, and the hook listener stays on `127.0.0.1` regardless of `--host`. Do not bind to `0.0.0.0`: the allowlist cannot know every interface, and anyone who reaches the port with the token can run commands as you.
+
+The layout works at phone width: the sidebar becomes a drawer, the terminal fits the screen, and the quick-reply box stays at the bottom.
+
 ## Security model
 
 The server can spawn shells, so treat it as remote code execution if exposed. It binds to localhost by default, always requires an access token (exchanged for an `HttpOnly`, `SameSite=Strict` cookie), validates `Host` and `Origin` headers, and runs repository setup/run/archive scripts only after you have reviewed and approved them. Hook events from agents arrive on a separate loopback-only listener with per-session tokens. Details are in [docs/architecture.md](docs/architecture.md#9-security-model-summary-of-enforcement-points).

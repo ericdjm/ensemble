@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { Agent, EffectiveRepoConfig, Repo, Workspace } from "../../../shared/types.js";
 import { api } from "../api.js";
 import { navigateToWorkspace } from "../route.js";
+import { useUiState } from "../store.js";
 import { Dialog } from "./Dialog.js";
 
 export function NewWorkspaceDialog({
@@ -19,7 +20,8 @@ export function NewWorkspaceDialog({
   const [baseBranch, setBaseBranch] = useState(repo?.defaultBase ?? "main");
   const [agent, setAgent] = useState<Agent>("claude");
   const [prompt, setPrompt] = useState("");
-  const [remoteControl, setRemoteControl] = useState(false);
+  const ui = useUiState();
+  const [remoteControl, setRemoteControl] = useState(ui.settings?.remoteControlDefault ?? false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 

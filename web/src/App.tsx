@@ -8,7 +8,7 @@ import { SettingsDialog } from "./components/SettingsDialog.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { WorkspaceView } from "./components/WorkspaceView.js";
 import { navigateToDoctor, useRoute } from "./route.js";
-import { connect, enableNotifications, loadSnapshot, useUiState } from "./store.js";
+import { connect, enableNotifications, loadSettings, loadSnapshot, useUiState } from "./store.js";
 
 type DialogState =
   | { kind: "none" }
@@ -26,6 +26,7 @@ export function App() {
 
   useEffect(() => {
     loadSnapshot().catch((e: Error) => setLoadError(e.message));
+    void loadSettings();
     connect();
   }, []);
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { SettingsView } from "../../../shared/types.js";
 import { api } from "../api.js";
+import { loadSettings } from "../store.js";
 import { Dialog } from "./Dialog.js";
 
 export function SettingsDialog({ onClose }: { onClose: () => void }) {
@@ -22,6 +23,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
       if (s.cliPaths.claude) cliPaths.claude = s.cliPaths.claude;
       if (s.cliPaths.codex) cliPaths.codex = s.cliPaths.codex;
       await api("PUT", "/api/settings", { ...s, cliPaths });
+      await loadSettings();
       onClose();
     } catch (err) {
       setError((err as Error).message);

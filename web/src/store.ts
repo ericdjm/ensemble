@@ -5,6 +5,7 @@ import type {
   Session,
   StateSnapshot,
   Workspace,
+  SettingsView,
 } from "../../shared/types.js";
 import { setFaviconBadge } from "./favicon.js";
 import { api, setAuthLostHandler } from "./api.js";
@@ -16,6 +17,7 @@ export interface UiState {
   setupLogs: Record<string, string>;
   hookListener: { ok: boolean; port: number; error?: string } | null;
   notificationsEnabled: boolean;
+  settings: SettingsView | null;
 }
 
 let state: UiState = {
@@ -24,6 +26,7 @@ let state: UiState = {
   authLost: false,
   setupLogs: {},
   hookListener: null,
+  settings: null,
   notificationsEnabled:
     typeof Notification !== "undefined" && Notification.permission === "granted",
 };
@@ -201,6 +204,14 @@ export async function loadSnapshot(): Promise<void> {
   const snapshot = await api<StateSnapshot>("GET", "/api/state");
   setState({ snapshot });
   updateTitle();
+}
+
+export async function loadSettings(): Promise<void> {
+  try {
+    setState({ settings: await api<SettingsView>("GET", "/api/settings") });
+  } catch {
+    /* settings are optional for rendering */
+  }
 }
 
 let socket: WebSocket | null = null;

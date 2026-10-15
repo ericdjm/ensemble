@@ -17,9 +17,10 @@ function NewSessionDialog({
   onClose: () => void;
   defaultAgent: Agent;
 }) {
+  const ui = useUiState();
   const [agent, setAgent] = useState<Agent>(defaultAgent);
   const [prompt, setPrompt] = useState("");
-  const [remoteControl, setRemoteControl] = useState(false);
+  const [remoteControl, setRemoteControl] = useState(ui.settings?.remoteControlDefault ?? false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const submit = async (e: React.FormEvent) => {

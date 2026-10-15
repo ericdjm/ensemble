@@ -136,7 +136,7 @@ export function WorkspaceView({
         {TABS.map((t) => (
           <button
             key={t.id}
-            className={`px-3 py-2 text-sm ${tab === t.id ? "border-b-2 border-neutral-900 font-medium dark:border-neutral-100" : "text-neutral-500"}`}
+            className={`whitespace-nowrap px-3 py-2 text-sm ${tab === t.id ? "border-b-2 border-neutral-900 font-medium dark:border-neutral-100" : "text-neutral-500"}`}
             onClick={() => setTab(t.id)}
           >
             {t.label}
