@@ -66,7 +66,10 @@ export async function main(argv: string[]): Promise<void> {
   }
 
   const db = openDb(statePaths(stateDir).db);
-  const app = await buildApp({ config, db, host: opts.host, port: opts.port });
+  const app = await buildApp({ config, db, stateDir, host: opts.host, port: opts.port });
+  await app.services.workspaces
+    .reconcile()
+    .catch((e: Error) => console.error(`reconcile: ${e.message}`));
   await app.fastify.listen({ host: opts.host, port: opts.port });
   const url = loginUrl(opts.host, opts.port, config.uiToken);
   console.log(`${PRODUCT_NAME} listening on http://${opts.host}:${opts.port}`);

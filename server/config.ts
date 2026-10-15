@@ -37,6 +37,7 @@ export function statePaths(stateDir: string) {
     db: path.join(stateDir, "ensemble.db"),
     logs: path.join(stateDir, "logs"),
     sessions: path.join(stateDir, "sessions"),
+    workspaces: path.join(stateDir, "workspaces"),
     archives: path.join(stateDir, "archives"),
   };
 }
@@ -44,7 +45,7 @@ export function statePaths(stateDir: string) {
 /** Creates the private state directory tree (0700) if needed. */
 export function ensureStateDirs(stateDir: string): void {
   const p = statePaths(stateDir);
-  for (const dir of [p.root, p.logs, p.sessions, p.archives]) {
+  for (const dir of [p.root, p.logs, p.sessions, p.workspaces, p.archives]) {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     chmodSync(dir, 0o700);
   }

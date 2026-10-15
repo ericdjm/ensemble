@@ -6,20 +6,26 @@ import { computeAllowedHosts, registerAuth } from "./auth.js";
 import type { Config } from "./config.js";
 import type { Db } from "./db/index.js";
 import { webDistDir } from "./paths.js";
+import { registerRoutes, snapshot, type Services } from "./routes.js";
+import { Tmux } from "./tmux.js";
+import { WorkspaceService } from "./workspaces.js";
 import { StateHub } from "./ws.js";
 
 export interface AppOptions {
   config: Config;
   db: Db;
+  stateDir: string;
   host: string;
   port: number;
   /** Directory with the built web assets; serving is skipped when it does not exist. */
   webDist?: string;
+  tmux?: Tmux;
 }
 
 export interface App {
   fastify: FastifyInstance;
   hub: StateHub;
+  services: Services;
   allowedHosts: Set<string>;
 }
 
@@ -33,8 +39,17 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     allowedHosts,
   });
 
+  const tmux = opts.tmux ?? new Tmux();
+  const workspaces = new WorkspaceService({
+    db: opts.db,
+    config: opts.config,
+    stateDir: opts.stateDir,
+    tmux,
+  });
+  const services: Services = { db: opts.db, workspaces };
+
   fastify.get("/api/health", async () => ({ ok: true, name: PRODUCT_NAME }));
-  fastify.get("/api/state", async () => getState());
+  registerRoutes(fastify, services);
 
   const webDist = opts.webDist ?? webDistDir();
   if (existsSync(webDist)) {
@@ -47,9 +62,16 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     });
   }
 
-  const getState = () => ({ repos: [], workspaces: [], sessions: [] });
-  const hub = new StateHub(fastify, { browserSessions, allowedHosts, getState });
+  const hub = new StateHub(fastify, {
+    browserSessions,
+    allowedHosts,
+    getState: () => snapshot(services),
+  });
+  workspaces.on("changed", (item) => hub.broadcast({ t: "workspace.changed", item }));
+  workspaces.on("setup-output", (workspaceId: string, chunk: string) =>
+    hub.broadcast({ t: "script.output", workspaceId, kind: "setup", chunk }),
+  );
   fastify.addHook("onClose", async () => hub.close());
 
-  return { fastify, hub, allowedHosts };
+  return { fastify, hub, services, allowedHosts };
 }

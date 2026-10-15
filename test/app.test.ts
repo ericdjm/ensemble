@@ -70,6 +70,7 @@ describe("auth and routing", () => {
     const second = await buildApp({
       config: defaultConfig(env.token, 50000),
       db: env.db,
+      stateDir: env.dir,
       host: "127.0.0.1",
       port: 4999,
       webDist: "/nonexistent",

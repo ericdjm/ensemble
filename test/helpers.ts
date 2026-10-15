@@ -4,11 +4,13 @@ import path from "node:path";
 import { buildApp, type App } from "../server/app.js";
 import { defaultConfig, ensureStateDirs } from "../server/config.js";
 import { openDb, type Db } from "../server/db/index.js";
+import { Tmux } from "../server/tmux.js";
 
 export interface TestEnv {
   dir: string;
   db: Db;
   app: App;
+  tmux: Tmux;
   token: string;
   host: string;
   cleanup: () => Promise<void>;
@@ -16,27 +18,33 @@ export interface TestEnv {
 
 export const TEST_PORT = 4999;
 
-/** Builds an app with a temp state dir and in-memory-like DB file, no web assets. */
+/** Builds an app with a temp state dir, a file DB, a private tmux socket, and no web assets. */
 export async function makeTestApp(): Promise<TestEnv> {
   const dir = mkdtempSync(path.join(os.tmpdir(), "ensemble-test-"));
   ensureStateDirs(dir);
   const db = openDb(path.join(dir, "ensemble.db"));
   const config = defaultConfig("test-token-0123456789abcdef", 50000);
+  config.workspaceRoot = path.join(dir, "workspaces-root");
+  const tmux = new Tmux({ socketName: `ensemble-test-${process.pid}` });
   const app = await buildApp({
     config,
     db,
+    stateDir: dir,
     host: "127.0.0.1",
     port: TEST_PORT,
     webDist: path.join(dir, "no-web"),
+    tmux,
   });
   return {
     dir,
     db,
     app,
+    tmux,
     token: config.uiToken,
     host: `127.0.0.1:${TEST_PORT}`,
     cleanup: async () => {
       await app.fastify.close();
+      await tmux.killServer();
       db.close();
       rmSync(dir, { recursive: true, force: true });
     },
