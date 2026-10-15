@@ -36,6 +36,14 @@ Status: milestones M0–M2 are implemented (repos, workspaces, archive, tmux-bac
 
 Ensemble behaves like a terminal multiplexer. It launches your own installed `claude` and `codex` binaries interactively, inside tmux, using the CLIs' own login. It never reads, copies, stores, or proxies your credentials or tokens, never implements a login flow of its own, and never uses headless or SDK modes. By default it removes API-key environment variables from agent sessions and, inside the session itself, asks the CLI for its non-secret authentication mode (`claude auth status --json`) before starting it. If the mode is not a subscription login the launch is refused with the reason shown in the terminal. An opt-in in Settings allows API-key billing with a visible warning; unverified modes additionally need a per-session acknowledgement and are never labelled subscription-verified. For Codex the same check uses `codex login status`; only a ChatGPT login counts as a subscription. An automated check in CI fails if the source code ever references the CLIs' credential files.
 
+## Status detection and the event log
+
+Ensemble never screen-scrapes the terminal. Claude Code sessions get a per-session settings file (passed with `--settings`) that registers a tiny silent hook helper for the lifecycle events Claude Code exposes. Each hook event is written to a private per-session spool on disk first and then delivered to a loopback-only listener, so events survive server restarts and are replayed once, in order. Every event is in the Events tab with its raw payload and can be exported as JSONL. Payloads can contain secrets; they stay on your disk with private permissions and are never uploaded anywhere.
+
+Claude Code holds back hooks until you accept its workspace-trust prompt in the terminal for a new worktree. Until then the session shows no events; accept the prompt and status starts flowing.
+
+**Codex limitations.** Codex's lifecycle hooks are injected with `-c` config overrides and must be trusted once through Codex's own `/hooks` command; Ensemble never bypasses that trust. Until trusted, only the `notify` fallback reports turn completion, so tool activity and permission prompts are not visible and needs-input detection is best-effort. The `-c` hook injection has not yet been verified against the installed Codex binary.
+
 ## Security model
 
 The server can spawn shells, so treat it as remote code execution if exposed. It binds to localhost by default, always requires an access token (exchanged for an `HttpOnly`, `SameSite=Strict` cookie), validates `Host` and `Origin` headers, and runs repository setup/run/archive scripts only after you have reviewed and approved them. Hook events from agents arrive on a separate loopback-only listener with per-session tokens. Details are in [docs/architecture.md](docs/architecture.md#9-security-model-summary-of-enforcement-points).

@@ -1,5 +1,12 @@
 import { useSyncExternalStore } from "react";
-import type { ServerMessage, Session, StateSnapshot, Workspace } from "../../shared/types.js";
+import type {
+  EventSummary,
+  ServerMessage,
+  Session,
+  StateSnapshot,
+  Workspace,
+} from "../../shared/types.js";
+import { setFaviconBadge } from "./favicon.js";
 import { api, setAuthLostHandler } from "./api.js";
 
 export interface UiState {
@@ -64,6 +71,26 @@ export function attentionCount(): number {
 function updateTitle(): void {
   const n = attentionCount();
   document.title = n > 0 ? `(${n}) Ensemble` : "Ensemble";
+  try {
+    setFaviconBadge(n);
+  } catch {
+    /* no canvas */
+  }
+}
+
+const eventListeners = new Map<string, Set<(ev: EventSummary) => void>>();
+
+/** Per-session live event feed for the Events tab. */
+export function subscribeEvents(sessionId: string, cb: (ev: EventSummary) => void): () => void {
+  let set = eventListeners.get(sessionId);
+  if (!set) {
+    set = new Set();
+    eventListeners.set(sessionId, set);
+  }
+  set.add(cb);
+  return () => {
+    set?.delete(cb);
+  };
 }
 
 function notify(session: Session): void {
@@ -123,6 +150,9 @@ export function applyMessage(msg: ServerMessage): void {
           },
         });
       }
+      break;
+    case "event.appended":
+      for (const cb of eventListeners.get(msg.sessionId) ?? []) cb(msg.event);
       break;
     case "hooks.listener":
       setState({

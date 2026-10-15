@@ -5,6 +5,8 @@ import { ApproveScripts } from "./ApproveScripts.js";
 import { SetupLog } from "./SetupLog.js";
 import { StatusBadge } from "./StatusBadge.js";
 import { SessionsTab } from "./SessionsTab.js";
+import { EventsTab } from "./EventsTab.js";
+import { useUiState } from "../store.js";
 
 type Tab = "sessions" | "run" | "setup" | "diff" | "events" | "pr";
 const TABS: Array<{ id: Tab; label: string }> = [
@@ -26,6 +28,9 @@ export function WorkspaceView({
   onArchive: () => void;
 }) {
   const [tab, setTab] = useState<Tab>(workspace.status === "ready" ? "sessions" : "setup");
+  const ui = useUiState();
+  const latestSession =
+    (ui.snapshot?.sessions ?? []).filter((s) => s.workspaceId === workspace.id).at(-1) ?? null;
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(workspace.name);
   const [error, setError] = useState<string | null>(null);
@@ -141,7 +146,13 @@ export function WorkspaceView({
         {tab === "sessions" && (
           <SessionsTab workspace={workspace} defaultAgent={workspace.creation.request.agent} />
         )}
-        {tab !== "setup" && tab !== "sessions" && (
+        {tab === "events" &&
+          (latestSession ? (
+            <EventsTab session={latestSession} />
+          ) : (
+            <p className="p-4 text-sm text-neutral-500">No sessions yet.</p>
+          ))}
+        {tab !== "setup" && tab !== "sessions" && tab !== "events" && (
           <p className="p-4 text-sm text-neutral-500">
             {TABS.find((t) => t.id === tab)?.label} arrives in a later milestone.
           </p>

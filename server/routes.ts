@@ -17,6 +17,7 @@ import type { SessionService } from "./sessions.js";
 import type { HookListener } from "./hooks/listener.js";
 import type { Tmux } from "./tmux.js";
 import { doctorReport } from "./doctor.js";
+import { summarizeEvent } from "./hooks/summary.js";
 import { saveConfig, type Config } from "./config.js";
 import type { SettingsView } from "../shared/types.js";
 import { writeFileSync } from "node:fs";
@@ -32,6 +33,14 @@ export interface Services {
   tmux: Tmux;
   config: Config;
   stateDir: string;
+}
+
+function safeJson(v: unknown): unknown {
+  try {
+    return typeof v === "string" ? JSON.parse(v) : null;
+  } catch {
+    return null;
+  }
 }
 
 export function snapshot(s: Services): StateSnapshot {
@@ -426,7 +435,7 @@ export function registerRoutes(app: FastifyInstance, s: Services): void {
     const limit = Math.min(1000, Math.max(1, Number(q.limit) || 200));
     const rows = s.db
       .prepare(
-        "SELECT event_id, seq, generation, type, tool_name, source_ts, ingested_at, truncated FROM events WHERE session_id = ? AND generation = ? AND seq > ? " +
+        "SELECT event_id, seq, generation, type, tool_name, source_ts, ingested_at, truncated, payload_json FROM events WHERE session_id = ? AND generation = ? AND seq > ? " +
           "AND (? IS NULL OR type = ?) AND (? IS NULL OR tool_name = ?) ORDER BY seq LIMIT ?",
       )
       .all(
@@ -454,6 +463,11 @@ export function registerRoutes(app: FastifyInstance, s: Services): void {
         sourceTs: e["source_ts"],
         ingestedAt: e["ingested_at"],
         truncated: e["truncated"] === 1,
+        summary: summarizeEvent(
+          String(e["type"]),
+          (e["tool_name"] as string | null) ?? null,
+          safeJson(e["payload_json"]),
+        ),
       })),
       gaps,
     };
@@ -521,5 +535,72 @@ export function registerRoutes(app: FastifyInstance, s: Services): void {
       saveConfig(s.stateDir, s.config);
       return settingsView();
     },
+  );
+  app.get<{ Params: { id: string } }>(
+    "/api/sessions/:id/events.jsonl",
+    { schema: { params: idParam } },
+    async (request, reply) => {
+      const session = s.sessions.get(request.params.id);
+      const rows = s.db
+        .prepare(
+          "SELECT event_id, seq, generation, type, tool_name, source_ts, ingested_at, truncated, payload_json FROM events WHERE session_id = ? AND generation = ? ORDER BY seq",
+        )
+        .all(session.id, session.hookGeneration) as Array<Record<string, unknown>>;
+      const gaps = s.db
+        .prepare(
+          "SELECT from_seq, to_seq, count, reason, recorded_at FROM event_gaps WHERE session_id = ? AND generation = ? ORDER BY from_seq",
+        )
+        .all(session.id, session.hookGeneration) as Array<{
+        from_seq: number;
+        to_seq: number;
+        count: number;
+        reason: string;
+        recorded_at: string;
+      }>;
+      const gapLine = (gap: (typeof gaps)[number]) =>
+        JSON.stringify({
+          gap: true,
+          fromSeq: gap.from_seq,
+          toSeq: gap.to_seq,
+          count: gap.count,
+          reason: gap.reason,
+          recordedAt: gap.recorded_at,
+        });
+      const lines: string[] = [];
+      let gi = 0;
+      for (const e of rows) {
+        const seq = e["seq"] as number;
+        while (gi < gaps.length && (gaps[gi] as (typeof gaps)[number]).to_seq < seq)
+          lines.push(gapLine(gaps[gi++] as (typeof gaps)[number]));
+        lines.push(
+          JSON.stringify({
+            id: e["event_id"],
+            sessionId: session.id,
+            generation: e["generation"],
+            seq,
+            type: e["type"],
+            tool: e["tool_name"],
+            sourceTs: e["source_ts"],
+            ingestedAt: e["ingested_at"],
+            truncated: e["truncated"] === 1,
+            payload: safeJson(e["payload_json"]),
+          }),
+        );
+      }
+      while (gi < gaps.length) lines.push(gapLine(gaps[gi++] as (typeof gaps)[number]));
+      return reply
+        .header("content-type", "application/x-ndjson; charset=utf-8")
+        .header(
+          "content-disposition",
+          `attachment; filename="ensemble-events-${session.id.slice(0, 8)}.jsonl"`,
+        )
+        .send(lines.join("\n") + (lines.length ? "\n" : ""));
+    },
+  );
+
+  app.delete<{ Params: { id: string } }>(
+    "/api/sessions/:id/events",
+    { schema: { params: idParam } },
+    async (request) => s.sessions.clearEvents(request.params.id),
   );
 }

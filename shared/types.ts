@@ -143,7 +143,7 @@ export type ServerMessage =
       pendingInputs: PendingInputs;
       notify: boolean;
     }
-  | { t: "event.appended"; sessionId: string; event: unknown }
+  | { t: "event.appended"; sessionId: string; event: EventSummary }
   | { t: "event.gap"; sessionId: string; gap: unknown }
   | { t: "diff.changed"; workspaceId: string }
   | { t: "pr.changed"; workspaceId: string; pr: unknown }
@@ -212,6 +212,15 @@ export interface EventSummary {
   sourceTs: string | null;
   ingestedAt: string;
   truncated: boolean;
+  summary?: string;
+}
+
+export interface EventGap {
+  from_seq: number;
+  to_seq: number;
+  count: number;
+  reason: string;
+  recorded_at: string;
 }
 
 export interface DoctorTool {

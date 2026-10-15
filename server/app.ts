@@ -10,6 +10,7 @@ import type { Db } from "./db/index.js";
 import { HookIngest } from "./hooks/ingest.js";
 import { HookListener } from "./hooks/listener.js";
 import { drainSpools } from "./hooks/spool.js";
+import { summarizeEvent } from "./hooks/summary.js";
 import { webDistDir } from "./paths.js";
 import { registerRoutes, snapshot, type Services } from "./routes.js";
 import { SessionService } from "./sessions.js";
@@ -155,10 +156,19 @@ export async function buildApp(opts: AppOptions): Promise<App> {
         type: envelope.type,
         toolName: envelope.tool,
         sourceTs: envelope.sourceTs,
+        ingestedAt: new Date().toISOString(),
         truncated: envelope.truncated,
+        summary: summarizeEvent(envelope.type, envelope.tool, envelope.payload),
       },
     }),
   );
+  sessions.on("stop", (sessionId: string) => {
+    try {
+      hub.broadcast({ t: "diff.changed", workspaceId: sessions.get(sessionId).workspaceId });
+    } catch {
+      /* session gone */
+    }
+  });
   registerTerminalBridge(hub, { tmux, sessions, workspaces });
 
   let drainTimer: NodeJS.Timeout | null = null;

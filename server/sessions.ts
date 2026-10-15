@@ -13,8 +13,40 @@ import { packageRoot } from "./paths.js";
 import { STRIPPED_ENV_VARS, type Tmux } from "./tmux.js";
 import { scriptEnv, WorkspaceError, type WorkspaceService } from "./workspaces.js";
 import { EMPTY_PENDING, initialTurnState, type TurnState } from "./hooks/reducer.js";
+import { withSpoolLock } from "./hooks/spool-lock.js";
+import { readFileSync, readdirSync, rmSync } from "node:fs";
 
 export const EXIT_REFUSED = 78;
+
+/** Claude Code events registered per session (docs/architecture.md §7.6). PermissionRequest hooks return nothing. */
+export const CLAUDE_HOOK_EVENTS: readonly string[] = [
+  "SessionStart",
+  "UserPromptSubmit",
+  "PreToolUse",
+  "PostToolUse",
+  "PostToolUseFailure",
+  "PermissionRequest",
+  "PermissionDenied",
+  "Notification",
+  "Elicitation",
+  "ElicitationResult",
+  "Stop",
+  "StopFailure",
+  "SubagentStart",
+  "SubagentStop",
+  "SessionEnd",
+];
+
+/** Codex lifecycle hooks (documented; injection via -c is unverified on the real binary, see cli-notes). */
+export const CODEX_HOOK_EVENTS: readonly string[] = [
+  "SessionStart",
+  "UserPromptSubmit",
+  "PreToolUse",
+  "PermissionRequest",
+  "PostToolUse",
+  "Stop",
+  "SessionEnd",
+];
 
 export interface SessionRow {
   id: string;
@@ -241,20 +273,26 @@ export class SessionService extends EventEmitter {
     const options: string[] = [];
     let remoteControlName: string | undefined;
     if (input.agent === "claude") {
-      const hook = (event: string) => ({
-        [event]: [{ hooks: [{ type: "command", command: captureCmd("claude"), timeout: 5 }] }],
-      });
-      const settings = write("claude-settings.json", {
-        hooks: { ...hook("SessionStart"), ...hook("SessionEnd") },
-      });
+      const hooks: Record<string, unknown> = {};
+      for (const event of CLAUDE_HOOK_EVENTS) {
+        hooks[event] = [
+          { hooks: [{ type: "command", command: captureCmd("claude"), timeout: 5 }] },
+        ];
+      }
+      const settings = write("claude-settings.json", { hooks });
       options.push("--settings", settings);
       if (input.resumeCliSessionId) options.push("--resume", input.resumeCliSessionId);
       if (input.remoteControl) remoteControlName = `${repo.name}/${ws.name}`;
     } else {
       const notify = `notify=[${JSON.stringify(process.execPath)},${JSON.stringify(path.join(helpers, "codex-notify.mjs"))}]`;
-      const hookDef = `hooks.SessionStart=[{hooks=[{type="command",command=${JSON.stringify(captureCmd("codex"))}}]}]`;
       if (input.resumeCliSessionId) options.push("resume");
-      options.push("-c", notify, "-c", hookDef);
+      options.push("-c", notify);
+      for (const event of CODEX_HOOK_EVENTS) {
+        options.push(
+          "-c",
+          `hooks.${event}=[{hooks=[{type="command",command=${JSON.stringify(captureCmd("codex"))}}]}]`,
+        );
+      }
       if (input.resumeCliSessionId) options.push(input.resumeCliSessionId);
     }
 
@@ -391,6 +429,58 @@ export class SessionService extends EventEmitter {
         "UPDATE sessions SET process_state = 'missing', status = CASE WHEN status IN ('exited','error') THEN status ELSE 'exited' END, ended_at = COALESCE(ended_at, ?) WHERE id = ?",
       )
       .run(nowIso(), id);
+    return this.emitChanged(id);
+  }
+
+  /**
+   * Clears the event history (docs §7.6): under the spool lock the generation is bumped and old records
+   * removed, so a delayed POST or replay carrying the old generation is rejected instead of restored.
+   */
+  clearEvents(id: string): Session {
+    const row = this.row(id);
+    const dir = this.sessionDir(id);
+    const newGeneration = withSpoolLock(dir, (spool) => {
+      let generation = row.hook_generation;
+      try {
+        const state = JSON.parse(readFileSync(path.join(spool, "state.json"), "utf8")) as {
+          generation?: number;
+        };
+        if (Number.isInteger(state.generation))
+          generation = Math.max(generation, state.generation as number);
+      } catch {
+        /* no state yet */
+      }
+      const next = generation + 1;
+      for (const name of readdirSync(spool)) {
+        if (name === "lock") continue;
+        if (name === "gap.json" || /^\d+-\d{10}\.json$/.test(name))
+          rmSync(path.join(spool, name), { force: true });
+      }
+      writeFileSync(path.join(spool, "state.json"), JSON.stringify({ generation: next, seq: 0 }), {
+        mode: 0o600,
+      });
+      const hookFile = path.join(dir, "hook.json");
+      try {
+        const hook = JSON.parse(readFileSync(hookFile, "utf8")) as Record<string, unknown>;
+        writeFileSync(hookFile, JSON.stringify({ ...hook, generation: next }, null, 2), {
+          mode: 0o600,
+        });
+      } catch {
+        /* session dir without hook.json (never launched) */
+      }
+      return next;
+    });
+    this.db.transaction(() => {
+      this.db
+        .prepare("DELETE FROM events WHERE session_id = ? AND generation < ?")
+        .run(id, newGeneration);
+      this.db
+        .prepare("DELETE FROM event_gaps WHERE session_id = ? AND generation < ?")
+        .run(id, newGeneration);
+      this.db
+        .prepare("UPDATE sessions SET hook_generation = ?, last_seq = 0 WHERE id = ?")
+        .run(newGeneration, id);
+    })();
     return this.emitChanged(id);
   }
 

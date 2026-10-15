@@ -121,6 +121,9 @@ export class HookIngest {
     if (result.committed && result.reason !== "duplicate" && result.reason !== "late") {
       if (!opts.replay) this.sessions.emitChanged(envelope.sessionId, result.reason === "notify");
       this.sessions.emit("event", envelope);
+      if (envelope.type === "Stop" || envelope.type === "agent-turn-complete") {
+        this.sessions.emit("stop", envelope.sessionId);
+      }
     }
     return result;
   }
