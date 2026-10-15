@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { buildApp, type App } from "../server/app.js";
-import { defaultConfig, ensureStateDirs } from "../server/config.js";
+import { defaultConfig, ensureStateDirs, pickFreeHookPort } from "../server/config.js";
 import { openDb, type Db } from "../server/db/index.js";
 import { Tmux } from "../server/tmux.js";
 
@@ -19,11 +19,14 @@ export interface TestEnv {
 export const TEST_PORT = 4999;
 
 /** Builds an app with a temp state dir, a file DB, a private tmux socket, and no web assets. */
-export async function makeTestApp(): Promise<TestEnv> {
+export async function makeTestApp(
+  opts: { extraAgentEnv?: Record<string, string>; cliPath?: string } = {},
+): Promise<TestEnv> {
   const dir = mkdtempSync(path.join(os.tmpdir(), "ensemble-test-"));
   ensureStateDirs(dir);
   const db = openDb(path.join(dir, "ensemble.db"));
-  const config = defaultConfig("test-token-0123456789abcdef", 50000);
+  const config = defaultConfig("test-token-0123456789abcdef", await pickFreeHookPort());
+  if (opts.cliPath) config.cliPaths = { claude: opts.cliPath, codex: opts.cliPath };
   config.workspaceRoot = path.join(dir, "workspaces-root");
   const tmux = new Tmux({ socketName: `ensemble-test-${process.pid}` });
   const app = await buildApp({
@@ -34,6 +37,7 @@ export async function makeTestApp(): Promise<TestEnv> {
     port: TEST_PORT,
     webDist: path.join(dir, "no-web"),
     tmux,
+    ...(opts.extraAgentEnv ? { extraAgentEnv: opts.extraAgentEnv } : {}),
   });
   return {
     dir,

@@ -13,6 +13,12 @@ import {
 import { REPO_CONFIG_FILENAME, type ScriptKind } from "./repo-config.js";
 import { WorkspaceError, type WorkspaceService } from "./workspaces.js";
 import { ArchiveConflict, type ArchiveDecisions, type ArchiveService } from "./archive.js";
+import type { SessionService } from "./sessions.js";
+import type { HookListener } from "./hooks/listener.js";
+import type { Tmux } from "./tmux.js";
+import { doctorReport } from "./doctor.js";
+import { saveConfig, type Config } from "./config.js";
+import type { SettingsView } from "../shared/types.js";
 import { writeFileSync } from "node:fs";
 import { execFile } from "node:child_process";
 import path from "node:path";
@@ -21,10 +27,15 @@ export interface Services {
   db: Db;
   workspaces: WorkspaceService;
   archive: ArchiveService;
+  sessions: SessionService;
+  listener: HookListener;
+  tmux: Tmux;
+  config: Config;
+  stateDir: string;
 }
 
 export function snapshot(s: Services): StateSnapshot {
-  return { repos: listRepos(s.db), workspaces: s.workspaces.list(), sessions: [] };
+  return { repos: listRepos(s.db), workspaces: s.workspaces.list(), sessions: s.sessions.list() };
 }
 
 const idParam = {
@@ -310,6 +321,205 @@ export function registerRoutes(app: FastifyInstance, s: Services): void {
         ),
       );
       return reply.code(204).send();
+    },
+  );
+  app.post<{
+    Body: {
+      workspaceId: string;
+      agent: "claude" | "codex";
+      prompt?: string;
+      remoteControl?: boolean;
+      billingAck?: boolean;
+    };
+  }>(
+    "/api/sessions",
+    {
+      schema: {
+        body: {
+          type: "object",
+          required: ["workspaceId", "agent"],
+          properties: {
+            workspaceId: { type: "string" },
+            agent: { enum: ["claude", "codex"] },
+            prompt: { type: "string", maxLength: 100000 },
+            remoteControl: { type: "boolean" },
+            billingAck: { type: "boolean" },
+          },
+        },
+      },
+    },
+    async (request, reply) => reply.code(202).send(await s.sessions.launch(request.body)),
+  );
+
+  app.get<{ Params: { id: string } }>(
+    "/api/sessions/:id",
+    { schema: { params: idParam } },
+    async (request) => s.sessions.get(request.params.id),
+  );
+
+  app.post<{
+    Params: { id: string };
+    Body: { cliSessionId?: string; billingAck?: boolean; picker?: boolean };
+  }>(
+    "/api/sessions/:id/resume",
+    {
+      schema: {
+        params: idParam,
+        body: {
+          type: "object",
+          properties: {
+            cliSessionId: { type: "string", maxLength: 128 },
+            billingAck: { type: "boolean" },
+            picker: { type: "boolean" },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const body = request.body ?? {};
+      const session = body.picker
+        ? await s.sessions.openPicker(request.params.id)
+        : await s.sessions.resume(request.params.id, body);
+      return reply.code(202).send(session);
+    },
+  );
+
+  app.post<{ Params: { id: string }; Body: { text: string } }>(
+    "/api/sessions/:id/input",
+    {
+      schema: {
+        params: idParam,
+        body: {
+          type: "object",
+          required: ["text"],
+          properties: { text: { type: "string", maxLength: 100000 } },
+        },
+      },
+    },
+    async (request, reply) => {
+      await s.sessions.input(request.params.id, request.body.text);
+      return reply.code(204).send();
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/api/sessions/:id/remote-control",
+    { schema: { params: idParam } },
+    async (request, reply) => {
+      await s.sessions.sendCommand(request.params.id, "/remote-control");
+      return reply.code(204).send();
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/api/sessions/:id/kill",
+    { schema: { params: idParam } },
+    async (request) => s.sessions.kill(request.params.id),
+  );
+
+  app.get<{
+    Params: { id: string };
+    Querystring: { after?: number; type?: string; tool?: string; limit?: number };
+  }>("/api/sessions/:id/events", { schema: { params: idParam } }, async (request) => {
+    const session = s.sessions.get(request.params.id);
+    const q = request.query;
+    const limit = Math.min(1000, Math.max(1, Number(q.limit) || 200));
+    const rows = s.db
+      .prepare(
+        "SELECT event_id, seq, generation, type, tool_name, source_ts, ingested_at, truncated FROM events WHERE session_id = ? AND generation = ? AND seq > ? " +
+          "AND (? IS NULL OR type = ?) AND (? IS NULL OR tool_name = ?) ORDER BY seq LIMIT ?",
+      )
+      .all(
+        session.id,
+        session.hookGeneration,
+        Number(q.after) || 0,
+        q.type ?? null,
+        q.type ?? null,
+        q.tool ?? null,
+        q.tool ?? null,
+        limit,
+      ) as Array<Record<string, unknown>>;
+    const gaps = s.db
+      .prepare(
+        "SELECT from_seq, to_seq, count, reason, recorded_at FROM event_gaps WHERE session_id = ? AND generation = ?",
+      )
+      .all(session.id, session.hookGeneration);
+    return {
+      events: rows.map((e) => ({
+        eventId: e["event_id"],
+        seq: e["seq"],
+        generation: e["generation"],
+        type: e["type"],
+        toolName: e["tool_name"],
+        sourceTs: e["source_ts"],
+        ingestedAt: e["ingested_at"],
+        truncated: e["truncated"] === 1,
+      })),
+      gaps,
+    };
+  });
+
+  app.get<{ Params: { id: string; eventId: string } }>(
+    "/api/sessions/:id/events/:eventId",
+    async (request, reply) => {
+      const row = s.db
+        .prepare("SELECT payload_json FROM events WHERE session_id = ? AND event_id = ?")
+        .get(request.params.id, request.params.eventId) as { payload_json: string } | undefined;
+      if (!row) return reply.code(404).send({ error: "not found" });
+      return reply.type("application/json").send(row.payload_json);
+    },
+  );
+
+  app.get("/api/doctor", async () => doctorReport(s.config, s.db, s.tmux, s.listener.state));
+
+  const settingsView = (): SettingsView => ({
+    billingOptIn: s.config.billingOptIn,
+    remoteControlDefault: s.config.remoteControlDefault,
+    cliPaths: s.config.cliPaths,
+    workspaceRoot: s.config.workspaceRoot,
+    branchPrefix: s.config.branchPrefix,
+    portBase: s.config.portBase,
+  });
+  app.get("/api/settings", async () => settingsView());
+  app.put<{ Body: Partial<SettingsView> }>(
+    "/api/settings",
+    {
+      schema: {
+        body: {
+          type: "object",
+          properties: {
+            billingOptIn: { type: "boolean" },
+            remoteControlDefault: { type: "boolean" },
+            cliPaths: {
+              type: "object",
+              properties: { claude: { type: "string" }, codex: { type: "string" } },
+            },
+            workspaceRoot: { type: "string", minLength: 1 },
+            branchPrefix: { type: "string", minLength: 1 },
+            portBase: { type: "integer", minimum: 1024, maximum: 65000 },
+          },
+        },
+      },
+    },
+    async (request) => {
+      const b = request.body;
+      if (b.billingOptIn !== undefined) s.config.billingOptIn = b.billingOptIn;
+      if (b.remoteControlDefault !== undefined)
+        s.config.remoteControlDefault = b.remoteControlDefault;
+      if (b.cliPaths) {
+        const next: Config["cliPaths"] = {};
+        for (const k of ["claude", "codex"] as const) {
+          const v = b.cliPaths[k];
+          if (v && v.startsWith("/")) next[k] = v;
+          else if (v) throw new WorkspaceError(`cliPaths.${k} must be an absolute path`);
+        }
+        s.config.cliPaths = next;
+      }
+      if (b.workspaceRoot) s.config.workspaceRoot = b.workspaceRoot;
+      if (b.branchPrefix) s.config.branchPrefix = b.branchPrefix;
+      if (b.portBase) s.config.portBase = b.portBase;
+      saveConfig(s.stateDir, s.config);
+      return settingsView();
     },
   );
 }

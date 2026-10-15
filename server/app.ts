@@ -1,15 +1,21 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import fastifyStatic from "@fastify/static";
 import { existsSync } from "node:fs";
+import type { EventEnvelope, Session } from "../shared/types.js";
 import { PRODUCT_NAME } from "../shared/brand.js";
+import { ArchiveService } from "./archive.js";
 import { computeAllowedHosts, registerAuth } from "./auth.js";
 import type { Config } from "./config.js";
 import type { Db } from "./db/index.js";
+import { HookIngest } from "./hooks/ingest.js";
+import { HookListener } from "./hooks/listener.js";
+import { drainSpools } from "./hooks/spool.js";
 import { webDistDir } from "./paths.js";
 import { registerRoutes, snapshot, type Services } from "./routes.js";
+import { SessionService } from "./sessions.js";
+import { registerTerminalBridge } from "./terminal.js";
 import { Tmux } from "./tmux.js";
 import { WorkspaceService } from "./workspaces.js";
-import { ArchiveService } from "./archive.js";
 import { StateHub } from "./ws.js";
 
 export interface AppOptions {
@@ -21,6 +27,8 @@ export interface AppOptions {
   /** Directory with the built web assets; serving is skipped when it does not exist. */
   webDist?: string;
   tmux?: Tmux;
+  /** Test-only: extra variables placed in every agent's tmux environment. */
+  extraAgentEnv?: Record<string, string>;
 }
 
 export interface App {
@@ -28,6 +36,8 @@ export interface App {
   hub: StateHub;
   services: Services;
   allowedHosts: Set<string>;
+  /** Binds the hook listener, drains spools, and starts liveness polling. */
+  start: () => Promise<void>;
 }
 
 export async function buildApp(opts: AppOptions): Promise<App> {
@@ -54,7 +64,47 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     tmux,
     workspaces,
   });
-  const services: Services = { db: opts.db, workspaces, archive };
+  const sessions = new SessionService({
+    db: opts.db,
+    config: opts.config,
+    stateDir: opts.stateDir,
+    tmux,
+    workspaces,
+    ...(opts.extraAgentEnv ? { extraAgentEnv: opts.extraAgentEnv } : {}),
+  });
+  archive.registerStopper((workspaceId) => sessions.stopForWorkspace(workspaceId));
+  const ingest = new HookIngest(opts.db, sessions);
+
+  const pendingBroadcasts: Array<() => void> = [];
+  let hubRef: StateHub | null = null;
+  const broadcastListenerState = (state: { ok: boolean; port: number; error: string | null }) => {
+    const send = () =>
+      hubRef?.broadcast({
+        t: "hooks.listener",
+        ok: state.ok,
+        port: state.port,
+        ...(state.error ? { error: state.error } : {}),
+      });
+    if (hubRef) send();
+    else pendingBroadcasts.push(send);
+  };
+  const listener = new HookListener(
+    opts.config.hookPort,
+    ingest,
+    opts.config.spool.payloadCapBytes + 64 * 1024,
+    broadcastListenerState,
+  );
+
+  const services: Services = {
+    db: opts.db,
+    workspaces,
+    archive,
+    sessions,
+    listener,
+    tmux,
+    config: opts.config,
+    stateDir: opts.stateDir,
+  };
 
   fastify.get("/api/health", async () => ({ ok: true, name: PRODUCT_NAME }));
   registerRoutes(fastify, services);
@@ -75,11 +125,71 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     allowedHosts,
     getState: () => snapshot(services),
   });
+  hubRef = hub;
+  for (const send of pendingBroadcasts) send();
+
   workspaces.on("changed", (item) => hub.broadcast({ t: "workspace.changed", item }));
   workspaces.on("setup-output", (workspaceId: string, chunk: string) =>
     hub.broadcast({ t: "script.output", workspaceId, kind: "setup", chunk }),
   );
-  fastify.addHook("onClose", async () => hub.close());
+  sessions.on("changed", (item: Session) => hub.broadcast({ t: "session.changed", item }));
+  sessions.on("status", (item: Session, notify: boolean) =>
+    hub.broadcast({
+      t: "session.status",
+      sessionId: item.id,
+      status: item.status,
+      processState: item.processState,
+      freshness: item.freshness,
+      pendingInputs: item.pendingInputs,
+      notify,
+    }),
+  );
+  sessions.on("event", (envelope: EventEnvelope) =>
+    hub.broadcast({
+      t: "event.appended",
+      sessionId: envelope.sessionId,
+      event: {
+        eventId: envelope.id,
+        seq: envelope.seq,
+        generation: envelope.generation,
+        type: envelope.type,
+        toolName: envelope.tool,
+        sourceTs: envelope.sourceTs,
+        truncated: envelope.truncated,
+      },
+    }),
+  );
+  registerTerminalBridge(hub, { tmux, sessions, workspaces });
 
-  return { fastify, hub, services, allowedHosts };
+  let drainTimer: NodeJS.Timeout | null = null;
+  const drain = () => {
+    try {
+      drainSpools(opts.stateDir, ingest, (sessionId) => {
+        try {
+          sessions.emitChanged(sessionId, false);
+        } catch {
+          /* row gone */
+        }
+      });
+    } catch {
+      /* drain errors are non-fatal */
+    }
+  };
+  const start = async () => {
+    await listener.start();
+    drain();
+    drainTimer = setInterval(drain, 15_000);
+    drainTimer.unref();
+    sessions.ensureLiveness();
+    await sessions.refreshLiveness().catch(() => undefined);
+  };
+
+  fastify.addHook("onClose", async () => {
+    if (drainTimer) clearInterval(drainTimer);
+    sessions.stopLiveness();
+    await listener.stop();
+    hub.close();
+  });
+
+  return { fastify, hub, services, allowedHosts, start };
 }

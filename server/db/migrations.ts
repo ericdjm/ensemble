@@ -121,4 +121,11 @@ CREATE TABLE browser_sessions (
 );
 `,
   },
+  {
+    id: 2,
+    sql: `
+ALTER TABLE sessions ADD COLUMN hook_token_hash TEXT;
+ALTER TABLE sessions ADD COLUMN cli_options_json TEXT NOT NULL DEFAULT '[]';
+`,
+  },
 ];

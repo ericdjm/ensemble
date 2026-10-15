@@ -70,9 +70,18 @@ export async function main(argv: string[]): Promise<void> {
   await app.services.workspaces
     .reconcile()
     .catch((e: Error) => console.error(`reconcile: ${e.message}`));
+  await app.start();
+  if (!app.services.listener.state.ok) {
+    console.error(
+      `Hook listener unavailable: ${app.services.listener.state.error}. Events are queued on disk until it can bind on restart.`,
+    );
+  }
   await app.fastify.listen({ host: opts.host, port: opts.port });
   const url = loginUrl(opts.host, opts.port, config.uiToken);
   console.log(`${PRODUCT_NAME} listening on http://${opts.host}:${opts.port}`);
+  console.log(
+    `Hook listener on 127.0.0.1:${config.hookPort}${app.services.listener.state.ok ? "" : " (FAILED)"}`,
+  );
   console.log(`Login URL: ${url}`);
   if (opts.host !== DEFAULT_UI_HOST) {
     console.log(

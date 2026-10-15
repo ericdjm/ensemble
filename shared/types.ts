@@ -126,21 +126,21 @@ export interface ArchiveRecord {
 export interface StateSnapshot {
   repos: Repo[];
   workspaces: Workspace[];
-  sessions: unknown[];
+  sessions: Session[];
 }
 
 export type ServerMessage =
   | { t: "snapshot"; state: StateSnapshot }
   | { t: "repo.changed"; item: Repo }
   | { t: "workspace.changed"; item: Workspace }
-  | { t: "session.changed"; item: unknown }
+  | { t: "session.changed"; item: Session }
   | {
       t: "session.status";
       sessionId: string;
       status: string;
       processState: string;
       freshness: string;
-      pendingInputs: unknown;
+      pendingInputs: PendingInputs;
       notify: boolean;
     }
   | { t: "event.appended"; sessionId: string; event: unknown }
@@ -149,3 +149,98 @@ export type ServerMessage =
   | { t: "pr.changed"; workspaceId: string; pr: unknown }
   | { t: "script.output"; workspaceId: string; kind: "setup" | "run"; chunk: string }
   | { t: "hooks.listener"; ok: boolean; port: number; error?: string };
+
+export type SessionStatus = "starting" | "working" | "needs_input" | "idle" | "exited" | "error";
+export type ProcessState = "running" | "dead" | "missing" | "unknown";
+export type Freshness = "current" | "stale" | "unknown";
+export type AuthMode = "subscription" | "api" | "other" | "unknown" | "unchecked";
+
+export interface PendingInputs {
+  perm: Record<string, number>;
+  prompt: boolean;
+  elicitation: boolean;
+  agentInput: boolean;
+}
+
+export interface Session {
+  id: string;
+  workspaceId: string;
+  agent: Agent;
+  tmuxName: string;
+  cliSessionId: string | null;
+  transcriptPath: string | null;
+  remoteControl: boolean;
+  status: SessionStatus;
+  exitCode: number | null;
+  processState: ProcessState;
+  freshness: Freshness;
+  authMode: AuthMode;
+  authLabel: string | null;
+  authCheckedAt: string | null;
+  billingOptIn: boolean;
+  billingAck: boolean;
+  refusalReason: string | null;
+  predecessorId: string | null;
+  successorId: string | null;
+  hookGeneration: number;
+  lastSeq: number;
+  pendingInputs: PendingInputs;
+  createdAt: string;
+  startedAt: string | null;
+  endedAt: string | null;
+}
+
+export interface EventEnvelope {
+  id: string;
+  sessionId: string;
+  generation: number;
+  seq: number;
+  source: string;
+  type: string;
+  tool: string | null;
+  sourceTs: string;
+  truncated: boolean;
+  payload: unknown;
+}
+
+export interface EventSummary {
+  eventId: string;
+  seq: number;
+  generation: number;
+  type: string;
+  toolName: string | null;
+  sourceTs: string | null;
+  ingestedAt: string;
+  truncated: boolean;
+}
+
+export interface DoctorTool {
+  name: string;
+  path: string | null;
+  resolvedFrom: "override" | "login-shell PATH" | null;
+  version: string | null;
+  error: string | null;
+}
+
+export interface DoctorReport {
+  tools: DoctorTool[];
+  gh: { loggedIn: boolean | null; summary: string | null };
+  hookListener: { ok: boolean; port: number; error: string | null };
+  tmuxSocket: string;
+  authModes: Array<{
+    agent: Agent;
+    mode: AuthMode;
+    label: string | null;
+    checkedAt: string | null;
+  }>;
+  notes: string[];
+}
+
+export interface SettingsView {
+  billingOptIn: boolean;
+  remoteControlDefault: boolean;
+  cliPaths: { claude?: string; codex?: string };
+  workspaceRoot: string;
+  branchPrefix: string;
+  portBase: number;
+}
