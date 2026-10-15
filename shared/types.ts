@@ -80,7 +80,7 @@ export interface Workspace {
   error: string | null;
   creation: CreationState;
   copyManifest: string[];
-  pr: { number: number; url: string; state: string } | null;
+  pr: PrInfo | null;
   createdAt: string;
   archivedAt: string | null;
 }
@@ -146,7 +146,7 @@ export type ServerMessage =
   | { t: "event.appended"; sessionId: string; event: EventSummary }
   | { t: "event.gap"; sessionId: string; gap: unknown }
   | { t: "diff.changed"; workspaceId: string }
-  | { t: "pr.changed"; workspaceId: string; pr: unknown }
+  | { t: "pr.changed"; workspaceId: string; pr: PrInfo }
   | { t: "script.output"; workspaceId: string; kind: "setup" | "run"; chunk: string }
   | { t: "hooks.listener"; ok: boolean; port: number; error?: string };
 
@@ -274,4 +274,24 @@ export interface RunState {
   exitCode: number | null;
   script: string | null;
   approved: boolean;
+}
+
+export interface PrCheck {
+  name: string;
+  result: "passed" | "failed" | "pending";
+  url: string | null;
+}
+
+export interface PrInfo {
+  number: number;
+  url: string;
+  state: string;
+  title: string;
+  isDraft: boolean;
+  mergeable: string | null;
+  reviewDecision: string | null;
+  checks: PrCheck[];
+  mergedAt: string | null;
+  baseRefName: string | null;
+  fetchedAt: string;
 }

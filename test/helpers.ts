@@ -20,7 +20,12 @@ export const TEST_PORT = 4999;
 
 /** Builds an app with a temp state dir, a file DB, a private tmux socket, and no web assets. */
 export async function makeTestApp(
-  opts: { extraAgentEnv?: Record<string, string>; cliPath?: string } = {},
+  opts: {
+    extraAgentEnv?: Record<string, string>;
+    cliPath?: string;
+    ghBinary?: string;
+    ghEnv?: Record<string, string>;
+  } = {},
 ): Promise<TestEnv> {
   const dir = mkdtempSync(path.join(os.tmpdir(), "ensemble-test-"));
   ensureStateDirs(dir);
@@ -38,6 +43,8 @@ export async function makeTestApp(
     webDist: path.join(dir, "no-web"),
     tmux,
     ...(opts.extraAgentEnv ? { extraAgentEnv: opts.extraAgentEnv } : {}),
+    ...(opts.ghBinary ? { ghBinary: opts.ghBinary } : {}),
+    ...(opts.ghEnv ? { ghEnv: opts.ghEnv } : {}),
   });
   return {
     dir,

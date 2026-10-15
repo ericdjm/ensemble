@@ -96,7 +96,24 @@ export function Sidebar({
                       <span className="min-w-0">
                         <span className="block truncate">{ws.name}</span>
                         <span className="block truncate text-xs text-neutral-500">
-                          {ws.pr ? `PR #${ws.pr.number}` : ws.branch}
+                          {ws.pr ? (
+                            <>
+                              <span
+                                className={
+                                  ws.pr.state === "MERGED"
+                                    ? "text-purple-500"
+                                    : ws.pr.state === "OPEN"
+                                      ? "text-emerald-600"
+                                      : ""
+                                }
+                              >
+                                PR #{ws.pr.number}
+                              </span>{" "}
+                              {ws.pr.title || ws.branch}
+                            </>
+                          ) : (
+                            ws.branch
+                          )}
                         </span>
                       </span>
                       <span className="flex items-center gap-2">

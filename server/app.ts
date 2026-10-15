@@ -14,6 +14,7 @@ import { summarizeEvent } from "./hooks/summary.js";
 import { webDistDir } from "./paths.js";
 import { registerRoutes, snapshot, type Services } from "./routes.js";
 import { SessionService } from "./sessions.js";
+import { PrService } from "./pr.js";
 import { registerTerminalBridge } from "./terminal.js";
 import { Tmux } from "./tmux.js";
 import { WorkspaceService } from "./workspaces.js";
@@ -31,6 +32,9 @@ export interface AppOptions {
   tmux?: Tmux;
   /** Test-only: extra variables placed in every agent's tmux environment. */
   extraAgentEnv?: Record<string, string>;
+  /** Test-only: path of a fake gh binary and its environment. */
+  ghBinary?: string;
+  ghEnv?: Record<string, string>;
 }
 
 export interface App {
@@ -75,6 +79,12 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     ...(opts.extraAgentEnv ? { extraAgentEnv: opts.extraAgentEnv } : {}),
   });
   archive.registerStopper((workspaceId) => sessions.stopForWorkspace(workspaceId));
+  const pr = new PrService({
+    db: opts.db,
+    workspaces,
+    ...(opts.ghBinary ? { ghBinary: opts.ghBinary } : {}),
+    ...(opts.ghEnv ? { ghEnv: opts.ghEnv } : {}),
+  });
   const ingest = new HookIngest(opts.db, sessions);
 
   const pendingBroadcasts: Array<() => void> = [];
@@ -102,6 +112,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     workspaces,
     archive,
     sessions,
+    pr,
     listener,
     tmux,
     config: opts.config,
@@ -181,6 +192,9 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       /* session gone */
     }
   });
+  pr.on("changed", (workspaceId: string, info) =>
+    hub.broadcast({ t: "pr.changed", workspaceId, pr: info }),
+  );
   registerTerminalBridge(hub, { tmux, sessions, workspaces });
 
   let drainTimer: NodeJS.Timeout | null = null;
@@ -203,12 +217,14 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     drainTimer = setInterval(drain, 15_000);
     drainTimer.unref();
     sessions.ensureLiveness();
+    pr.startPolling();
     await sessions.refreshLiveness().catch(() => undefined);
   };
 
   fastify.addHook("onClose", async () => {
     if (drainTimer) clearInterval(drainTimer);
     sessions.stopLiveness();
+    pr.stopPolling();
     await watcher.closeAll();
     await listener.stop();
     hub.close();

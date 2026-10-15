@@ -8,6 +8,7 @@ import { SessionsTab } from "./SessionsTab.js";
 import { EventsTab } from "./EventsTab.js";
 import { DiffTab } from "./DiffTab.js";
 import { RunTab } from "./RunTab.js";
+import { PrTab } from "./PrTab.js";
 import { useUiState } from "../store.js";
 
 type Tab = "sessions" | "run" | "setup" | "diff" | "events" | "pr";
@@ -150,6 +151,7 @@ export function WorkspaceView({
         )}
         {tab === "diff" && <DiffTab workspace={workspace} />}
         {tab === "run" && <RunTab workspace={workspace} />}
+        {tab === "pr" && <PrTab workspace={workspace} onArchive={onArchive} />}
         {tab === "events" &&
           (latestSession ? (
             <EventsTab session={latestSession} />
@@ -160,7 +162,8 @@ export function WorkspaceView({
           tab !== "sessions" &&
           tab !== "events" &&
           tab !== "diff" &&
-          tab !== "run" && (
+          tab !== "run" &&
+          tab !== "pr" && (
             <p className="p-4 text-sm text-neutral-500">
               {TABS.find((t) => t.id === tab)?.label} arrives in a later milestone.
             </p>

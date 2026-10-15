@@ -165,6 +165,11 @@ export function applyMessage(msg: ServerMessage): void {
         });
       }
       break;
+    case "pr.changed": {
+      const ws = state.snapshot?.workspaces.find((w) => w.id === msg.workspaceId);
+      if (ws) upsertWorkspace({ ...ws, pr: msg.pr });
+      break;
+    }
     case "diff.changed":
       for (const cb of diffListeners.get(msg.workspaceId) ?? []) cb();
       break;

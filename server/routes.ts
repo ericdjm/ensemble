@@ -14,6 +14,7 @@ import { REPO_CONFIG_FILENAME, type ScriptKind } from "./repo-config.js";
 import { WorkspaceError, type WorkspaceService } from "./workspaces.js";
 import { ArchiveConflict, type ArchiveDecisions, type ArchiveService } from "./archive.js";
 import type { SessionService } from "./sessions.js";
+import type { PrService } from "./pr.js";
 import type { HookListener } from "./hooks/listener.js";
 import type { Tmux } from "./tmux.js";
 import { doctorReport } from "./doctor.js";
@@ -30,6 +31,7 @@ export interface Services {
   workspaces: WorkspaceService;
   archive: ArchiveService;
   sessions: SessionService;
+  pr: PrService;
   listener: HookListener;
   tmux: Tmux;
   config: Config;
@@ -658,4 +660,48 @@ export function registerRoutes(app: FastifyInstance, s: Services): void {
       return reply.code(204).send();
     },
   );
+  app.post<{ Params: { id: string } }>(
+    "/api/workspaces/:id/push",
+    { schema: { params: idParam } },
+    async (request) => s.pr.push(request.params.id),
+  );
+  app.get<{ Params: { id: string } }>(
+    "/api/workspaces/:id/pr",
+    { schema: { params: idParam } },
+    async (request) => s.pr.refresh(request.params.id),
+  );
+  app.post<{ Params: { id: string }; Body: { title: string; body: string; draft?: boolean } }>(
+    "/api/workspaces/:id/pr",
+    {
+      schema: {
+        params: idParam,
+        body: {
+          type: "object",
+          required: ["title", "body"],
+          properties: {
+            title: { type: "string", minLength: 1, maxLength: 500 },
+            body: { type: "string", maxLength: 100000 },
+            draft: { type: "boolean" },
+          },
+        },
+      },
+    },
+    async (request, reply) =>
+      reply.code(201).send(await s.pr.create(request.params.id, request.body)),
+  );
+  app.post<{ Params: { id: string }; Body: { method: "squash" | "merge" | "rebase" } }>(
+    "/api/workspaces/:id/pr/merge",
+    {
+      schema: {
+        params: idParam,
+        body: {
+          type: "object",
+          required: ["method"],
+          properties: { method: { enum: ["squash", "merge", "rebase"] } },
+        },
+      },
+    },
+    async (request) => s.pr.merge(request.params.id, request.body.method),
+  );
+  app.get("/api/gh", async () => s.pr.ghAuth());
 }

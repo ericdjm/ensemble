@@ -25,6 +25,7 @@ import type {
   Workspace,
   WorkspaceStatus,
   RunState,
+  PrInfo,
 } from "../shared/types.js";
 export type { WorkspaceStatus, Agent, CreationRequest, CreationState, Workspace };
 
@@ -43,8 +44,33 @@ interface WorkspaceRow {
   pr_number: number | null;
   pr_url: string | null;
   pr_state: string | null;
+  pr_json: string | null;
   created_at: string;
   archived_at: string | null;
+}
+
+function parsePr(r: WorkspaceRow): PrInfo | null {
+  if (r.pr_number === null || r.pr_url === null) return null;
+  if (r.pr_json) {
+    try {
+      return JSON.parse(r.pr_json) as PrInfo;
+    } catch {
+      /* fall through */
+    }
+  }
+  return {
+    number: r.pr_number,
+    url: r.pr_url,
+    state: r.pr_state ?? "UNKNOWN",
+    title: "",
+    isDraft: false,
+    mergeable: null,
+    reviewDecision: null,
+    checks: [],
+    mergedAt: null,
+    baseRefName: null,
+    fetchedAt: r.created_at,
+  };
 }
 
 function rowToWorkspace(r: WorkspaceRow): Workspace {
@@ -60,10 +86,7 @@ function rowToWorkspace(r: WorkspaceRow): Workspace {
     error: r.error,
     creation: JSON.parse(r.creation_json) as CreationState,
     copyManifest: JSON.parse(r.copy_manifest_json) as string[],
-    pr:
-      r.pr_number !== null && r.pr_url !== null
-        ? { number: r.pr_number, url: r.pr_url, state: r.pr_state ?? "" }
-        : null,
+    pr: parsePr(r),
     createdAt: r.created_at,
     archivedAt: r.archived_at,
   };
@@ -437,6 +460,11 @@ export class WorkspaceService extends EventEmitter {
       clearInterval(timer);
       tick();
     };
+  }
+
+  /** Re-reads and broadcasts a workspace (used by services that update its columns directly). */
+  emitChanged(id: string): Workspace {
+    return this.update(id, {});
   }
 
   markArchived(id: string, error: string | null): Workspace {
