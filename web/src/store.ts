@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import type { ServerMessage, StateSnapshot, Workspace } from "../../shared/types.js";
+import type { ServerMessage, Session, StateSnapshot, Workspace } from "../../shared/types.js";
 import { api, setAuthLostHandler } from "./api.js";
 
 export interface UiState {
@@ -7,9 +7,19 @@ export interface UiState {
   connected: boolean;
   authLost: boolean;
   setupLogs: Record<string, string>;
+  hookListener: { ok: boolean; port: number; error?: string } | null;
+  notificationsEnabled: boolean;
 }
 
-let state: UiState = { snapshot: null, connected: false, authLost: false, setupLogs: {} };
+let state: UiState = {
+  snapshot: null,
+  connected: false,
+  authLost: false,
+  setupLogs: {},
+  hookListener: null,
+  notificationsEnabled:
+    typeof Notification !== "undefined" && Notification.permission === "granted",
+};
 const listeners = new Set<() => void>();
 
 function setState(patch: Partial<UiState>): void {
@@ -26,12 +36,48 @@ export function useUiState(): UiState {
   return useSyncExternalStore(subscribe, () => state);
 }
 
+function upsert<T extends { id: string; createdAt: string }>(list: T[], item: T): T[] {
+  const next = list.filter((w) => w.id !== item.id);
+  next.push(item);
+  next.sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
+  return next;
+}
+
 function upsertWorkspace(ws: Workspace): void {
   if (!state.snapshot) return;
-  const list = state.snapshot.workspaces.filter((w) => w.id !== ws.id);
-  list.push(ws);
-  list.sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
-  setState({ snapshot: { ...state.snapshot, workspaces: list } });
+  setState({ snapshot: { ...state.snapshot, workspaces: upsert(state.snapshot.workspaces, ws) } });
+}
+
+function upsertSession(s: Session): void {
+  if (!state.snapshot) return;
+  setState({ snapshot: { ...state.snapshot, sessions: upsert(state.snapshot.sessions, s) } });
+}
+
+export function attentionCount(): number {
+  return (
+    state.snapshot?.sessions.filter(
+      (s) => s.processState === "running" && s.status === "needs_input",
+    ).length ?? 0
+  );
+}
+
+function updateTitle(): void {
+  const n = attentionCount();
+  document.title = n > 0 ? `(${n}) Ensemble` : "Ensemble";
+}
+
+function notify(session: Session): void {
+  if (!state.notificationsEnabled || typeof Notification === "undefined") return;
+  const ws = state.snapshot?.workspaces.find((w) => w.id === session.workspaceId);
+  const title = session.status === "needs_input" ? "Agent needs input" : "Agent finished a turn";
+  try {
+    new Notification(title, {
+      body: `${ws?.name ?? "workspace"} · ${session.agent}`,
+      tag: `ensemble-${session.id}`,
+    });
+  } catch {
+    /* unsupported */
+  }
 }
 
 export function applyMessage(msg: ServerMessage): void {
@@ -42,6 +88,25 @@ export function applyMessage(msg: ServerMessage): void {
     case "workspace.changed":
       upsertWorkspace(msg.item);
       break;
+    case "session.changed":
+      upsertSession(msg.item);
+      break;
+    case "session.status": {
+      const current = state.snapshot?.sessions.find((s) => s.id === msg.sessionId);
+      if (current) {
+        const next: Session = {
+          ...current,
+          status: current.status,
+          pendingInputs: msg.pendingInputs,
+        };
+        next.status = msg.status as Session["status"];
+        next.processState = msg.processState as Session["processState"];
+        next.freshness = msg.freshness as Session["freshness"];
+        upsertSession(next);
+        if (msg.notify) notify(next);
+      }
+      break;
+    }
     case "repo.changed":
       if (state.snapshot) {
         const repos = state.snapshot.repos.filter((r) => r.id !== msg.item.id).concat(msg.item);
@@ -59,18 +124,31 @@ export function applyMessage(msg: ServerMessage): void {
         });
       }
       break;
+    case "hooks.listener":
+      setState({
+        hookListener: { ok: msg.ok, port: msg.port, ...(msg.error ? { error: msg.error } : {}) },
+      });
+      break;
     default:
       break;
   }
+  updateTitle();
 }
 
 export function setSetupLog(workspaceId: string, text: string): void {
   setState({ setupLogs: { ...state.setupLogs, [workspaceId]: text } });
 }
 
+export async function enableNotifications(): Promise<void> {
+  if (typeof Notification === "undefined") return;
+  const result = await Notification.requestPermission();
+  setState({ notificationsEnabled: result === "granted" });
+}
+
 export async function loadSnapshot(): Promise<void> {
   const snapshot = await api<StateSnapshot>("GET", "/api/state");
   setState({ snapshot });
+  updateTitle();
 }
 
 let socket: WebSocket | null = null;

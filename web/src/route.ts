@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 
 export interface Route {
+  page: "home" | "workspace" | "doctor";
   workspaceId: string | null;
 }
 
 function parse(): Route {
+  if (location.hash.startsWith("#/doctor")) return { page: "doctor", workspaceId: null };
   const m = /^#\/ws\/([^/]+)/.exec(location.hash);
-  return { workspaceId: m?.[1] ?? null };
+  return m?.[1] ? { page: "workspace", workspaceId: m[1] } : { page: "home", workspaceId: null };
 }
 
 export function useRoute(): Route {
@@ -21,4 +23,8 @@ export function useRoute(): Route {
 
 export function navigateToWorkspace(id: string | null): void {
   location.hash = id ? `#/ws/${id}` : "#/";
+}
+
+export function navigateToDoctor(): void {
+  location.hash = "#/doctor";
 }

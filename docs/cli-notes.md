@@ -86,6 +86,13 @@ Available on Pro, Max, Team, and Enterprise; API keys unsupported; Team/Enterpri
 - Trust: non-managed hooks must be reviewed with `/hooks`; trust is keyed by a hash of the definition, and changed definitions are skipped until re-trusted. Consequence: the hook command Ensemble injects must be byte-identical across sessions (session id via environment, token via a private file), or the user would have to re-trust every launch. Ensemble must not write to `~/.codex/` and must not pass `--dangerously-bypass-hook-trust`.
 - `notify` currently emits only `agent-turn-complete` as a single JSON argument with `type`, `thread-id`, `turn-id`, `cwd`, `input-messages`, `last-assistant-message`. It is rejected in project-local config and must be set at user level or via `-c notify=[...]`. It is not a tool or permission stream. Sources: [Codex hooks](https://learn.chatgpt.com/docs/hooks), [advanced config](https://learn.chatgpt.com/docs/config-file/config-advanced).
 
+## Runtime-tested during implementation (fake agent, never the real CLIs)
+
+- The launcher's environment filtering and `claude auth status --json` classification are covered by tests that run the real launcher against `test/fixtures/fake-agent.mjs`, including a tmux server that already retained `ANTHROPIC_API_KEY` from an earlier client (the pane still sees it absent).
+- Hook capture is tested for silence (empty stdout/stderr, exit 0) under success, HTTP 500, a hanging server, no server, malformed input, oversized input, a read-only spool, and eight concurrent writers.
+- `node-pty` 1.1.0 installed through pnpm 12 lacks the execute bit on `prebuilds/darwin-arm64/spawn-helper`; a fresh install reproduces it. The server restores the bit at startup (`ensurePtyHelperExecutable`).
+- Vitest fixtures must spawn helpers asynchronously: a blocking `spawnSync` stalls the event loop that hosts the fake hook listener, so the helper's POST times out. This was a test-harness artefact, not a helper bug.
+
 ## Reproduced review cases
 
 ### Ignored files are not protected by a clean Git status

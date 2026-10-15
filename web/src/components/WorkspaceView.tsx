@@ -4,6 +4,7 @@ import { api } from "../api.js";
 import { ApproveScripts } from "./ApproveScripts.js";
 import { SetupLog } from "./SetupLog.js";
 import { StatusBadge } from "./StatusBadge.js";
+import { SessionsTab } from "./SessionsTab.js";
 
 type Tab = "sessions" | "run" | "setup" | "diff" | "events" | "pr";
 const TABS: Array<{ id: Tab; label: string }> = [
@@ -137,7 +138,10 @@ export function WorkspaceView({
 
       <div className="min-h-0 flex-1 overflow-auto p-3">
         {tab === "setup" && <SetupLog workspaceId={workspace.id} />}
-        {tab !== "setup" && (
+        {tab === "sessions" && (
+          <SessionsTab workspace={workspace} defaultAgent={workspace.creation.request.agent} />
+        )}
+        {tab !== "setup" && tab !== "sessions" && (
           <p className="p-4 text-sm text-neutral-500">
             {TABS.find((t) => t.id === tab)?.label} arrives in a later milestone.
           </p>

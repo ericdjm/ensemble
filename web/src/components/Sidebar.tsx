@@ -1,20 +1,50 @@
 import { useState } from "react";
-import type { Repo, Workspace } from "../../../shared/types.js";
+import type { Repo, Session, Workspace } from "../../../shared/types.js";
 import { navigateToWorkspace } from "../route.js";
+import { effectiveStatus } from "./SessionBadges.js";
 import { StatusBadge } from "./StatusBadge.js";
 
 export interface SidebarProps {
   repos: Repo[];
   workspaces: Workspace[];
+  sessions: Session[];
   selectedId: string | null;
   onAddRepo: () => void;
   onNewWorkspace: (repoId: string) => void;
   onNavigate: () => void;
 }
 
+function SessionDots({ sessions }: { sessions: Session[] }) {
+  const live = sessions.filter((s) => s.processState === "running");
+  if (live.length === 0) return null;
+  const statuses = live.map(effectiveStatus);
+  const cls = statuses.includes("needs_input")
+    ? "bg-amber-500"
+    : statuses.includes("working")
+      ? "bg-blue-500 animate-pulse"
+      : statuses.includes("error")
+        ? "bg-red-500"
+        : "bg-emerald-500";
+  const title = statuses.includes("needs_input")
+    ? "needs input"
+    : statuses.includes("working")
+      ? "working"
+      : "idle";
+  return (
+    <span
+      className="flex items-center gap-1"
+      title={`${live.length} session${live.length === 1 ? "" : "s"}: ${title}`}
+    >
+      <span className={`inline-block h-2 w-2 rounded-full ${cls}`} />
+      {live.length > 1 && <span className="text-[10px] text-neutral-500">{live.length}</span>}
+    </span>
+  );
+}
+
 export function Sidebar({
   repos,
   workspaces,
+  sessions,
   selectedId,
   onAddRepo,
   onNewWorkspace,
@@ -66,10 +96,13 @@ export function Sidebar({
                       <span className="min-w-0">
                         <span className="block truncate">{ws.name}</span>
                         <span className="block truncate text-xs text-neutral-500">
-                          {ws.pr ? ws.pr.url.split("/").pop() : ws.branch}
+                          {ws.pr ? `PR #${ws.pr.number}` : ws.branch}
                         </span>
                       </span>
-                      <StatusBadge status={ws.status} />
+                      <span className="flex items-center gap-2">
+                        <SessionDots sessions={sessions.filter((s) => s.workspaceId === ws.id)} />
+                        <StatusBadge status={ws.status} />
+                      </span>
                     </button>
                   </li>
                 ))}

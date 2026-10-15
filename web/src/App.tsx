@@ -2,17 +2,20 @@ import { useEffect, useState } from "react";
 import { PRODUCT_NAME } from "../../shared/brand.js";
 import { AddRepoDialog } from "./components/AddRepoDialog.js";
 import { ArchiveDialog } from "./components/ArchiveDialog.js";
+import { DoctorPage } from "./components/DoctorPage.js";
 import { NewWorkspaceDialog } from "./components/NewWorkspaceDialog.js";
+import { SettingsDialog } from "./components/SettingsDialog.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { WorkspaceView } from "./components/WorkspaceView.js";
-import { useRoute } from "./route.js";
-import { connect, loadSnapshot, useUiState } from "./store.js";
+import { navigateToDoctor, useRoute } from "./route.js";
+import { connect, enableNotifications, loadSnapshot, useUiState } from "./store.js";
 
 type DialogState =
   | { kind: "none" }
   | { kind: "add-repo" }
   | { kind: "new-workspace"; repoId: string | null }
-  | { kind: "archive"; workspaceId: string };
+  | { kind: "archive"; workspaceId: string }
+  | { kind: "settings" };
 
 export function App() {
   const ui = useUiState();
@@ -28,6 +31,7 @@ export function App() {
 
   const workspaces = ui.snapshot?.workspaces ?? [];
   const repos = ui.snapshot?.repos ?? [];
+  const sessions = ui.snapshot?.sessions ?? [];
   const selected = workspaces.find((w) => w.id === route.workspaceId) ?? null;
   const selectedRepo = selected ? (repos.find((r) => r.id === selected.repoId) ?? null) : null;
 
@@ -65,18 +69,40 @@ export function App() {
             title={ui.connected ? "connected" : "reconnecting"}
           />
           <span className="font-semibold">{PRODUCT_NAME}</span>
-          <button
-            className="btn-ghost ml-auto md:hidden"
-            onClick={() => setSidebarOpen(false)}
-            aria-label="Close sidebar"
-          >
-            ✕
-          </button>
+          <span className="ml-auto flex items-center gap-1">
+            {!ui.notificationsEnabled && (
+              <button
+                className="btn-ghost text-xs"
+                onClick={() => void enableNotifications()}
+                title="Browser notifications when a session needs input or finishes"
+              >
+                🔔
+              </button>
+            )}
+            <button className="btn-ghost text-xs" onClick={navigateToDoctor} title="Doctor">
+              Doctor
+            </button>
+            <button
+              className="btn-ghost text-xs"
+              onClick={() => setDialog({ kind: "settings" })}
+              title="Settings"
+            >
+              ⚙
+            </button>
+            <button
+              className="btn-ghost md:hidden"
+              onClick={() => setSidebarOpen(false)}
+              aria-label="Close sidebar"
+            >
+              ✕
+            </button>
+          </span>
         </div>
         <div className="h-[calc(100%-2.75rem)]">
           <Sidebar
             repos={repos}
             workspaces={workspaces}
+            sessions={sessions}
             selectedId={selected?.id ?? null}
             onAddRepo={() => setDialog({ kind: "add-repo" })}
             onNewWorkspace={(repoId) => setDialog({ kind: "new-workspace", repoId })}
@@ -103,7 +129,15 @@ export function App() {
           <span className="truncate text-sm font-medium">{selected?.name ?? PRODUCT_NAME}</span>
         </div>
         {loadError && <p className="p-4 text-sm text-red-600">{loadError}</p>}
-        {selected && selectedRepo ? (
+        {ui.hookListener && !ui.hookListener.ok && (
+          <p className="border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-900 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
+            Hook listener unavailable on 127.0.0.1:{ui.hookListener.port}: {ui.hookListener.error}.
+            Session status may be stale; events are queued on disk.
+          </p>
+        )}
+        {route.page === "doctor" ? (
+          <DoctorPage />
+        ) : selected && selectedRepo ? (
           <WorkspaceView
             key={selected.id}
             workspace={selected}
@@ -120,6 +154,7 @@ export function App() {
       </main>
 
       {dialog.kind === "add-repo" && <AddRepoDialog onClose={() => setDialog({ kind: "none" })} />}
+      {dialog.kind === "settings" && <SettingsDialog onClose={() => setDialog({ kind: "none" })} />}
       {dialog.kind === "new-workspace" && (
         <NewWorkspaceDialog
           repos={repos}
