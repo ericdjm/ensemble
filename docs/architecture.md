@@ -313,7 +313,7 @@ Executed by the launcher, not the server, so it sees exactly the agent's filtere
   | `none`                                       | `unknown`      | "not logged in — run `claude` and `/login`"               |
   | parse error / timeout / nonzero without JSON | `unknown`      | "authentication mode could not be determined"             |
 
-- **Codex:** `codex login status` under the same env. Until the installed version's output contract is recorded in cli-notes (output channel, recognized mode indicators, exit behavior, with sanitized examples), the adapter returns `unknown` and Codex is refused by default. Codex support is not considered complete until that adapter is implemented against the recorded contract and covered by fixtures (decision §11.5).
+- **Codex:** `codex login status` under the same env, stdout and stderr captured (64 KiB cap) and matched: `Logged in using ChatGPT` → `subscription` ("ChatGPT subscription"), anything mentioning an API key → `api`, "not logged in" → `unknown`, anything else → `unknown`. Only the ChatGPT form has been observed on the installed version (cli-notes, October 15, 2026); the others are documentation-derived and fail closed.
 
 Policy (evaluated by the launcher from `launch.json`): default requires `subscription`. With the global opt-in, `api` is allowed and shown with a persistent billing badge. `other` and `unknown` additionally require `ack:true` for that specific launch; such sessions are labelled "auth mode unverified" and never "subscription-verified". A refusal leaves the session in `error` with `refusal_reason`; the UI offers "Relaunch with acknowledgement" (allowed only when the global opt-in is on), which creates a new session record with a predecessor link. Conflicting variable _names_ present in the launcher's env are reported in the `ensemble.preflight` envelope; values are never shown or stored.
 
@@ -324,7 +324,7 @@ The server keeps an advisory copy of the last known mode per CLI for the Doctor 
 - Claude: `claude --settings ~/.ensemble/sessions/<sid>/claude-settings.json [--remote-control "<repo>/<ws>"] ["<prompt>"]`. The settings file contains only `hooks`. Resume: `claude --settings … --resume <cli_session_id>`. `--remote-control` is omitted, the toggle disabled, and "Enable now" hidden when `auth_mode` is `other` (setup tokens lack the Remote Control scope) or the agent is Codex.
 - Codex: `codex -c 'hooks.<Event>=[{hooks=[{type="command",command="<node> <abs>/helpers/hook-capture.mjs codex"}]}]' … -c 'notify=["<node>","<abs>/helpers/codex-notify.mjs"]' ["<prompt>"]`. Resume: `codex … resume <cli_session_id>`. The hook command string is identical for every session (session id comes from `ENSEMBLE_SESSION_ID`), so Codex's trust hash is stable and the user trusts it once via `/hooks`. Ensemble never writes `~/.codex/*` and never passes `--dangerously-bypass-hook-trust`.
 
-**Workspace trust:** Claude holds back hooks from settings files until the folder is trusted interactively, and each worktree is a new folder. Ensemble takes no automatic action and does not pre-trust parent directories (decision §11.4). A session starts as `starting` with `freshness=unknown`; if the launcher reported a successful launch but no `SessionStart` has arrived after 20 s while the pane is alive, the UI shows: "No session events received yet. Check the terminal for trust or login prompts." The message makes no claim about the cause.
+**Workspace trust:** Claude holds back hooks from settings files, including `--settings`, until the folder is trusted interactively (confirmed October 15, 2026: `SessionStart` arrived within a second of accepting the dialog), and each worktree is a new folder. Ensemble takes no automatic action and does not pre-trust parent directories (decision §11.4). A session starts as `starting` with `freshness=unknown`; if the launcher reported a successful launch but no `SessionStart` has arrived after 20 s while the pane is alive, the UI shows: "No session events received yet. Check the terminal for trust or login prompts." The message makes no claim about the cause.
 
 ### 7.5 Resume
 
@@ -429,7 +429,7 @@ Each ends with green `pnpm typecheck && pnpm lint && pnpm test`, a conventional 
 2. **GitHub**: repository `ensemble`, public.
 3. **Copy routine**: descriptor-pinned worker (§6.2); fail closed on any inode mismatch.
 4. **Workspace trust**: hint only, no automatic action, no parent-directory pre-trust; neutral timeout message as in §7.4.
-5. **Codex**: refused by default through M2. Before Codex support is called complete, cli-notes must record the installed version, output channel, recognized mode indicators, and exit behavior of `codex login status` using sanitized examples, and the adapter must be implemented against that contract.
+5. **Codex**: the `login status` contract was recorded on October 15, 2026 and the adapter implemented against it; unobserved modes still fail closed.
 6. **Ports**: UI default 4800; hook port persisted from 49152–65535.
 
 ## 12. Dependency justification

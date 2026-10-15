@@ -47,11 +47,28 @@ function runStatus(cliPath, args, env, cwd) {
       cliPath,
       args,
       { env, cwd, timeout: 10_000, maxBuffer: 64 * 1024 },
-      (error, stdout) => {
-        resolve({ error, stdout: typeof stdout === "string" ? stdout : "" });
+      (error, stdout, stderr) => {
+        resolve({
+          error,
+          stdout: typeof stdout === "string" ? stdout : "",
+          stderr: typeof stderr === "string" ? stderr : "",
+        });
       },
     );
   });
+}
+
+/** Codex 0.160.1 prints "Logged in using ChatGPT" on stderr (verified once, docs/cli-notes.md); other forms fail closed. */
+export function classifyCodex(text) {
+  if (/logged in using chatgpt/i.test(text)) {
+    return { mode: "subscription", label: "ChatGPT subscription", authMethod: "chatgpt" };
+  }
+  if (/api key/i.test(text))
+    return { mode: "api", label: "API key billing", authMethod: "api_key" };
+  if (/not logged in/i.test(text)) {
+    return { mode: "unknown", label: "not logged in: run `codex login`", authMethod: "none" };
+  }
+  return { mode: "unknown", label: "unrecognised Codex login status output", authMethod: null };
 }
 
 /** Returns { mode, label, authMethod } using only the documented non-secret field. Raw output never leaves this function. */
@@ -78,12 +95,15 @@ export async function preflight(manifest, env) {
       authMethod: null,
     };
   }
-  // Codex: the installed version's `login status` output contract is not verified (cli-notes). Fail closed.
-  return {
-    mode: "unknown",
-    label: "Codex authentication status is not yet verified by Ensemble",
-    authMethod: null,
-  };
+  const { error, stdout, stderr } = await runStatus(
+    manifest.cliPath,
+    ["login", "status"],
+    env,
+    manifest.cwd,
+  );
+  if (error && error.killed)
+    return { mode: "unknown", label: "authentication check timed out", authMethod: null };
+  return classifyCodex(`${stdout}\n${stderr}`.slice(0, 4096));
 }
 
 export function decide(policy, mode) {

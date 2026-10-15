@@ -174,10 +174,36 @@ describe("agent-launcher", () => {
     expect(r.stdout).toMatch(/timed out/);
   }, 30_000);
 
-  it("refuses Codex by default because its status contract is unverified", async () => {
-    const r = await run(writeManifest({ agent: "codex" }));
-    expect(r.status).toBe(78);
-    expect(r.stdout).toMatch(/not yet verified/);
+  it("classifies Codex from its login-status line and fails closed otherwise", async () => {
+    expect((await run(writeManifest({ agent: "codex" }))).status).toBe(0);
+    const pre = server.received.find(
+      (x) => (x.body as { type: string }).type === "ensemble.preflight",
+    )?.body as {
+      payload: { mode: string; label: string };
+    };
+    expect(pre.payload).toMatchObject({ mode: "subscription", label: "ChatGPT subscription" });
+    expect(
+      (await run(writeManifest({ agent: "codex" }), { FAKE_CODEX_STATUS: "apikey" })).status,
+    ).toBe(78);
+    expect(
+      (await run(writeManifest({ agent: "codex", optIn: true }), { FAKE_CODEX_STATUS: "apikey" }))
+        .status,
+    ).toBe(0);
+    expect(
+      (await run(writeManifest({ agent: "codex", optIn: true }), { FAKE_CODEX_STATUS: "out" }))
+        .status,
+    ).toBe(78);
+    expect(
+      (await run(writeManifest({ agent: "codex", optIn: true }), { FAKE_CODEX_STATUS: "weird" }))
+        .status,
+    ).toBe(78);
+    expect(
+      (
+        await run(writeManifest({ agent: "codex", optIn: true, ack: true }), {
+          FAKE_CODEX_STATUS: "weird",
+        })
+      ).status,
+    ).toBe(0);
   });
 
   it("still launches when the listener is down, leaving reports in the spool", async () => {

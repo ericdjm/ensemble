@@ -11,7 +11,15 @@ import readline from "node:readline";
 
 const argv = process.argv.slice(2);
 
-if (argv[0] === "auth" && argv[1] === "status") {
+if (argv[0] === "login" && argv[1] === "status") {
+  // Codex form: one line on stderr, nothing on stdout.
+  const mode = process.env.FAKE_CODEX_STATUS ?? "chatgpt";
+  if (mode === "chatgpt") process.stderr.write("Logged in using ChatGPT\n");
+  else if (mode === "apikey") process.stderr.write("Logged in using an API key\n");
+  else if (mode === "out") process.stderr.write("Not logged in\n");
+  else process.stderr.write("something unexpected\n");
+  process.exit(mode === "out" ? 1 : 0);
+} else if (argv[0] === "auth" && argv[1] === "status") {
   const authMethod = process.env.FAKE_AUTH_METHOD ?? "claude.ai";
   if (authMethod === "garbage") {
     process.stdout.write("not json at all\n");

@@ -97,7 +97,7 @@ export async function doctorReport(
   const notes = [
     "Version checks prove a binary runs, not that it is logged in or that hooks work.",
     "Authentication modes are the launcher's last report for each CLI; Ensemble never reads credential files or runs status commands outside a launch.",
-    "Codex launches are refused by default until its login-status output contract is verified (see docs/cli-notes.md).",
+    "Codex counts as a subscription only when `codex login status` reports a ChatGPT login; other modes are refused unless API billing is allowed.",
   ];
   if (!tools.find((t) => t.name === "tmux")?.path)
     notes.unshift("tmux is required: brew install tmux");

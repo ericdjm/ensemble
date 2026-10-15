@@ -86,6 +86,11 @@ Available on Pro, Max, Team, and Enterprise; API keys unsupported; Team/Enterpri
 - Trust: non-managed hooks must be reviewed with `/hooks`; trust is keyed by a hash of the definition, and changed definitions are skipped until re-trusted. Consequence: the hook command Ensemble injects must be byte-identical across sessions (session id via environment, token via a private file), or the user would have to re-trust every launch. Ensemble must not write to `~/.codex/` and must not pass `--dangerously-bypass-hook-trust`.
 - `notify` currently emits only `agent-turn-complete` as a single JSON argument with `type`, `thread-id`, `turn-id`, `cwd`, `input-messages`, `last-assistant-message`. It is rejected in project-local config and must be set at user level or via `-c notify=[...]`. It is not a tool or permission stream. Sources: [Codex hooks](https://learn.chatgpt.com/docs/hooks), [advanced config](https://learn.chatgpt.com/docs/config-file/config-advanced).
 
+## Runtime-tested on October 15, 2026 with the real CLIs (one deliberate manual check each)
+
+- **Claude 2.1.300 through Ensemble, fresh worktree.** The workspace trust dialog appeared ("Is this a project you created or one you trust?", default "No, exit"). Hooks supplied via `--settings` were held back until "Yes, I trust this folder" was chosen; `SessionStart` arrived within one second of accepting. The launcher's preflight classified the login as `claude.ai` → subscription before the dialog; the UI badge read "subscription". `/exit` produced `SessionEnd` and a dead pane with exit code 0. No API variables were present.
+- **Codex 0.160.1 `login status`** (run once from the app-bundle path, output masked before being read, capture deleted): stdout empty, stderr exactly `Logged in using ChatGPT`, exit 0. No token-like strings. This is the only mode observed; the API-key and logged-out forms are taken from documentation only and are classified as `unknown` (fail closed) until seen. The adapter matches the ChatGPT line on stderr or stdout.
+
 ## Runtime-tested during implementation (fake agent, never the real CLIs)
 
 - The launcher's environment filtering and `claude auth status --json` classification are covered by tests that run the real launcher against `test/fixtures/fake-agent.mjs`, including a tmux server that already retained `ANTHROPIC_API_KEY` from an earlier client (the pane still sees it absent).
@@ -106,9 +111,8 @@ A temporary loopback HTTP server returned a harmless JSON response. `curl -s -m 
 ## Required implementation checks
 
 - Run `claude auth status --json` only from the preflight module, under the exact launch environment, with output capped and parsed for named fields only. Cover every `authMethod` value with fixtures. Never use real credentials in tests.
-- Manual (owner) check before Codex launch is enabled: run `codex login status` in a personal terminal, confirm it prints no secrets, and record its fields here.
+- Codex modes other than the ChatGPT login (API key, logged out) have not been observed; the adapter treats any other output as `unknown` and refuses by default.
 - Test the launcher against a pre-existing tmux server that retained a conflicting variable (reproduced above), dead-pane exit codes, reattachment, and exact-conversation resume with two conversations, using the fake agent only.
-- Manual (owner) check in M2: launch one real `claude` session through Ensemble in a new worktree, observe the trust dialog, and confirm whether `--settings` hooks fire before and after acceptance.
 - Prove source and destination containment, including symlink replacement during copying, within disposable fixtures.
 - Test archive preservation before cleanup, explicit ignored-file discard, cleanup failures, and changes between preflight and removal.
 - Test silent, bounded hook capture with a separate stable loopback listener, non-loopback UI binding, restart replay, duplicate delivery, concurrent writers, size limits, storage failure, and cleared-history replay rejection.
