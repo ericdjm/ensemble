@@ -474,6 +474,14 @@ export class WorkspaceService extends EventEmitter {
     };
   }
 
+  markArchived(id: string, error: string | null): Workspace {
+    return this.update(id, { status: "archived", archived_at: nowIso(), error });
+  }
+
+  setError(id: string, error: string | null): Workspace {
+    return this.update(id, { error });
+  }
+
   rename(id: string, newName: string): Workspace {
     const ws = this.get(id);
     const name = sanitizeWorkspaceName(newName);

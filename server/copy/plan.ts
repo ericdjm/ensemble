@@ -1,4 +1,4 @@
-import { lstatSync, readdirSync, realpathSync } from "node:fs";
+import { lstatSync, readdirSync, realpathSync, type Stats } from "node:fs";
 import path from "node:path";
 import picomatch from "picomatch";
 
@@ -140,5 +140,81 @@ export function buildCopyPlan(
     dstRootDev: dst.dev,
     dstRootIno: dst.ino,
     entries,
+  };
+}
+
+export interface ExplicitPlanResult {
+  plan: CopyPlan;
+  /** Entries that were not copied because they are symlinks or special files. */
+  skipped: Array<{ relPath: string; reason: string }>;
+}
+
+/**
+ * Builds a plan for explicit relative paths (files or directories) rather than patterns.
+ * Directories are walked without following symlinks; symlinks and special files are skipped and reported.
+ */
+export function buildCopyPlanForPaths(
+  relPaths: string[],
+  srcRootInput: string,
+  dstRootInput: string,
+): ExplicitPlanResult {
+  const srcRoot = realpathSync(srcRootInput);
+  const dstRoot = realpathSync(dstRootInput);
+  if (
+    srcRoot === dstRoot ||
+    dstRoot.startsWith(srcRoot + path.sep) ||
+    srcRoot.startsWith(dstRoot + path.sep)
+  ) {
+    throw new CopyPlanError("source and destination roots must be disjoint");
+  }
+  const src = inode(srcRoot);
+  const dst = inode(dstRoot);
+  const entries: CopyEntry[] = [];
+  const skipped: Array<{ relPath: string; reason: string }> = [];
+  let visited = 0;
+
+  const addFile = (rel: string, st: Stats) => {
+    entries.push({
+      relPath: rel,
+      size: st.size,
+      mode: st.mode & 0o777,
+      srcDev: st.dev,
+      srcIno: st.ino,
+    });
+  };
+  const visit = (rel: string) => {
+    if (++visited > MAX_WALK_ENTRIES) throw new CopyPlanError("too many files to preserve");
+    const st = lstatSync(path.join(srcRoot, rel));
+    if (st.isSymbolicLink()) return skipped.push({ relPath: rel, reason: "symlink" });
+    if (st.isDirectory()) {
+      for (const name of readdirSync(path.join(srcRoot, rel))) {
+        if (name === ".git") continue;
+        visit(`${rel}/${name}`);
+      }
+      return;
+    }
+    if (!st.isFile()) return skipped.push({ relPath: rel, reason: "special file" });
+    addFile(rel, st);
+  };
+
+  for (const raw of relPaths) {
+    const rel = raw.replace(/\/+$/, "");
+    const err = validatePattern(rel);
+    if (err) throw new CopyPlanError(`path ${JSON.stringify(raw)}: ${err}`);
+    if (hasGitComponent(rel)) throw new CopyPlanError(`refusing to touch ${rel}`);
+    visit(rel);
+  }
+  entries.sort((a, b) => (a.relPath < b.relPath ? -1 : 1));
+  return {
+    plan: {
+      srcRoot,
+      dstRoot,
+      srcRootDev: src.dev,
+      srcRootIno: src.ino,
+      dstRootDev: dst.dev,
+      dstRootIno: dst.ino,
+      entries,
+    },
+    skipped,
   };
 }

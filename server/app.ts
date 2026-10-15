@@ -9,6 +9,7 @@ import { webDistDir } from "./paths.js";
 import { registerRoutes, snapshot, type Services } from "./routes.js";
 import { Tmux } from "./tmux.js";
 import { WorkspaceService } from "./workspaces.js";
+import { ArchiveService } from "./archive.js";
 import { StateHub } from "./ws.js";
 
 export interface AppOptions {
@@ -46,7 +47,14 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     stateDir: opts.stateDir,
     tmux,
   });
-  const services: Services = { db: opts.db, workspaces };
+  const archive = new ArchiveService({
+    db: opts.db,
+    config: opts.config,
+    stateDir: opts.stateDir,
+    tmux,
+    workspaces,
+  });
+  const services: Services = { db: opts.db, workspaces, archive };
 
   fastify.get("/api/health", async () => ({ ok: true, name: PRODUCT_NAME }));
   registerRoutes(fastify, services);

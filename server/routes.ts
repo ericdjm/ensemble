@@ -11,12 +11,14 @@ import {
 } from "./repos.js";
 import { REPO_CONFIG_FILENAME, type ScriptKind } from "./repo-config.js";
 import { WorkspaceError, type WorkspaceService } from "./workspaces.js";
+import { ArchiveConflict, type ArchiveDecisions, type ArchiveService } from "./archive.js";
 import { writeFileSync } from "node:fs";
 import path from "node:path";
 
 export interface Services {
   db: Db;
   workspaces: WorkspaceService;
+  archive: ArchiveService;
 }
 
 export function snapshot(s: Services) {
@@ -32,6 +34,8 @@ const idParam = {
 export function registerRoutes(app: FastifyInstance, s: Services): void {
   app.setErrorHandler((rawError: unknown, _request, reply) => {
     const error = rawError as Error & { statusCode?: number };
+    if (error instanceof ArchiveConflict)
+      return reply.code(409).send({ error: error.message, inventory: error.inventory });
     if (error instanceof WorkspaceError)
       return reply.code(error.statusCode).send({ error: error.message });
     const status = error.statusCode;
@@ -213,5 +217,71 @@ export function registerRoutes(app: FastifyInstance, s: Services): void {
     async (request) => ({
       log: s.workspaces.readSetupLog(request.params.id),
     }),
+  );
+  app.get<{ Params: { id: string } }>(
+    "/api/workspaces/:id/archive-preflight",
+    { schema: { params: idParam } },
+    async (request) => s.archive.inventory(s.workspaces.get(request.params.id)),
+  );
+
+  app.post<{ Params: { id: string }; Body: ArchiveDecisions }>(
+    "/api/workspaces/:id/archive",
+    {
+      schema: {
+        params: idParam,
+        body: {
+          type: "object",
+          required: ["inventoryHash", "forceDirty", "ignored"],
+          properties: {
+            inventoryHash: { type: "string" },
+            forceDirty: { type: "boolean" },
+            ignored: { type: "object", additionalProperties: { enum: ["keep", "discard"] } },
+          },
+        },
+      },
+    },
+    async (request) => {
+      const record = await s.archive.archive(request.params.id, request.body);
+      return { workspace: s.workspaces.get(request.params.id), archive: record };
+    },
+  );
+
+  app.delete<{ Params: { id: string } }>(
+    "/api/workspaces/:id/branch",
+    { schema: { params: idParam } },
+    async (request, reply) => {
+      await s.archive.deleteBranch(request.params.id);
+      return reply.code(204).send();
+    },
+  );
+
+  app.get<{ Querystring: { workspaceId?: string } }>("/api/archives", async (request) =>
+    s.archive.listArchives(request.query.workspaceId),
+  );
+
+  app.post<{ Params: { id: string }; Body: { targetDir: string } }>(
+    "/api/archives/:id/restore",
+    {
+      schema: {
+        params: idParam,
+        body: {
+          type: "object",
+          required: ["targetDir"],
+          properties: { targetDir: { type: "string", minLength: 1 } },
+        },
+      },
+    },
+    async (request) => ({
+      restored: await s.archive.restore(request.params.id, request.body.targetDir),
+    }),
+  );
+
+  app.delete<{ Params: { id: string } }>(
+    "/api/archives/:id",
+    { schema: { params: idParam } },
+    async (request, reply) => {
+      s.archive.deleteArchiveFiles(request.params.id);
+      return reply.code(204).send();
+    },
   );
 }
