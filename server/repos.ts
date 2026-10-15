@@ -10,19 +10,11 @@ import {
   readRepoConfigFile,
   SCRIPT_KINDS,
   scriptHash,
-  type RepoConfig,
   type RepoConfigOverrides,
   type ScriptKind,
 } from "./repo-config.js";
-
-export interface Repo {
-  id: string;
-  path: string;
-  name: string;
-  slug: string;
-  defaultBase: string;
-  createdAt: string;
-}
+import type { EffectiveRepoConfig, Repo, ScriptApprovalState } from "../shared/types.js";
+export type { Repo, ScriptApprovalState, EffectiveRepoConfig };
 
 interface RepoRow {
   id: string;
@@ -131,21 +123,6 @@ export function setOverrides(db: Db, repoId: string, overrides: RepoConfigOverri
   db.prepare(
     "INSERT INTO settings (key, value_json) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json",
   ).run(overridesKey(repoId), JSON.stringify(overrides));
-}
-
-export interface ScriptApprovalState {
-  kind: ScriptKind;
-  script: string | null;
-  hash: string | null;
-  approved: boolean;
-}
-
-export interface EffectiveRepoConfig {
-  file: ReturnType<typeof readRepoConfigFile>;
-  overrides: RepoConfigOverrides;
-  config: RepoConfig;
-  scripts: ScriptApprovalState[];
-  needsApproval: boolean;
 }
 
 /** The repo's file config merged with per-user overrides, plus approval state per script. */

@@ -3,32 +3,13 @@ import type { Duplex } from "node:stream";
 import type { IncomingMessage } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
 import { BrowserSessions, COOKIE_NAME, originAllowed } from "./auth.js";
-
-export type ServerMessage =
-  | { t: "snapshot"; state: unknown }
-  | { t: "repo.changed"; item: unknown }
-  | { t: "workspace.changed"; item: unknown }
-  | { t: "session.changed"; item: unknown }
-  | {
-      t: "session.status";
-      sessionId: string;
-      status: string;
-      processState: string;
-      freshness: string;
-      pendingInputs: unknown;
-      notify: boolean;
-    }
-  | { t: "event.appended"; sessionId: string; event: unknown }
-  | { t: "event.gap"; sessionId: string; gap: unknown }
-  | { t: "diff.changed"; workspaceId: string }
-  | { t: "pr.changed"; workspaceId: string; pr: unknown }
-  | { t: "script.output"; workspaceId: string; kind: "setup" | "run"; chunk: string }
-  | { t: "hooks.listener"; ok: boolean; port: number; error?: string };
+import type { ServerMessage, StateSnapshot } from "../shared/types.js";
+export type { ServerMessage };
 
 export interface StateHubOptions {
   browserSessions: BrowserSessions;
   allowedHosts: ReadonlySet<string>;
-  getState: () => unknown;
+  getState: () => StateSnapshot;
 }
 
 function rejectUpgrade(socket: Duplex, status: number, text: string): void {

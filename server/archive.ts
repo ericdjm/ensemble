@@ -11,46 +11,14 @@ import { git } from "./git.js";
 import { effectiveRepoConfig, getRepo, type Repo } from "./repos.js";
 import type { Tmux } from "./tmux.js";
 import { scriptEnv, WorkspaceError, type Workspace, type WorkspaceService } from "./workspaces.js";
-
-export interface IgnoredEntry {
-  path: string;
-  /** True for a wholly ignored directory (listed with a trailing slash by git). */
-  directory: boolean;
-  symlink: boolean;
-  size: number | null;
-  fromCopyManifest: boolean;
-}
-
-export interface ArchiveInventory {
-  tracked: string[];
-  untracked: string[];
-  ignored: IgnoredEntry[];
-  /** Symlinks among untracked/ignored entries; never copied, removed with the worktree. */
-  symlinks: string[];
-  hash: string;
-}
-
-export interface ArchiveDecisions {
-  inventoryHash: string;
-  forceDirty: boolean;
-  ignored: Record<string, "keep" | "discard">;
-}
-
-export interface ManifestEntry {
-  relPath: string;
-  size: number;
-  sha256: string;
-  mode: number;
-}
-
-export interface ArchiveRecord {
-  id: string;
-  workspaceId: string;
-  recoveryDir: string;
-  manifest: ManifestEntry[];
-  createdAt: string;
-  deletedAt: string | null;
-}
+import type {
+  ArchiveDecisions,
+  ArchiveInventory,
+  ArchiveRecord,
+  IgnoredEntry,
+  ManifestEntry,
+} from "../shared/types.js";
+export type { IgnoredEntry, ArchiveInventory, ArchiveDecisions, ManifestEntry, ArchiveRecord };
 
 export class ArchiveConflict extends WorkspaceError {
   constructor(

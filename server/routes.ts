@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { Db } from "./db/index.js";
+import type { StateSnapshot } from "../shared/types.js";
 import {
   approveScripts,
   effectiveRepoConfig,
@@ -21,8 +22,8 @@ export interface Services {
   archive: ArchiveService;
 }
 
-export function snapshot(s: Services) {
-  return { repos: listRepos(s.db), workspaces: s.workspaces.list(), sessions: [] as unknown[] };
+export function snapshot(s: Services): StateSnapshot {
+  return { repos: listRepos(s.db), workspaces: s.workspaces.list(), sessions: [] };
 }
 
 const idParam = {

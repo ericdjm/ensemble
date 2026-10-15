@@ -2,18 +2,16 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { validatePattern } from "./copy/plan.js";
+import type {
+  RepoConfig,
+  RepoConfigFile,
+  RepoConfigOverrides,
+  ScriptKind,
+} from "../shared/types.js";
+export type { ScriptKind, RepoConfig, RepoConfigOverrides, RepoConfigFile };
 
 export const REPO_CONFIG_FILENAME = ".ensemble.json";
-export type ScriptKind = "setup" | "run" | "archive";
 export const SCRIPT_KINDS: readonly ScriptKind[] = ["setup", "run", "archive"];
-
-export interface RepoConfig {
-  setup: string | null;
-  run: string | null;
-  archive: string | null;
-  copy: string[];
-  defaultAgent: "claude" | "codex" | null;
-}
 
 export const EMPTY_REPO_CONFIG: RepoConfig = {
   setup: null,
@@ -24,8 +22,6 @@ export const EMPTY_REPO_CONFIG: RepoConfig = {
 };
 
 /** Per-user overrides stored in app settings; any key present replaces the repo's value. */
-export type RepoConfigOverrides = Partial<RepoConfig>;
-
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
@@ -65,12 +61,6 @@ export function parseRepoConfig(raw: unknown): RepoConfig {
     copy,
     defaultAgent,
   };
-}
-
-export interface RepoConfigFile {
-  exists: boolean;
-  config: RepoConfig;
-  error: string | null;
 }
 
 /** Reads <repo>/.ensemble.json; a missing file yields the empty config, a broken one yields an error. */

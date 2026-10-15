@@ -18,50 +18,14 @@ import {
 import { allocatePortBlock } from "./ports.js";
 import { effectiveRepoConfig, getRepo, listRepos, type Repo } from "./repos.js";
 import type { Tmux } from "./tmux.js";
-
-export type WorkspaceStatus =
-  | "pending_approval"
-  | "creating"
-  | "copying"
-  | "setting_up"
-  | "ready"
-  | "setup_failed"
-  | "archived";
-
-export type Agent = "claude" | "codex";
-
-export interface CreationRequest {
-  agent: Agent;
-  prompt?: string;
-  remoteControl?: boolean;
-}
-
-export interface CreationState {
-  request: CreationRequest;
-  steps: {
-    approval?: true;
-    worktree?: { head: string };
-    copy?: { count: number };
-    setup?: { exitCode: number };
-  };
-}
-
-export interface Workspace {
-  id: string;
-  repoId: string;
-  name: string;
-  branch: string;
-  path: string;
-  baseBranch: string;
-  port: number;
-  status: WorkspaceStatus;
-  error: string | null;
-  creation: CreationState;
-  copyManifest: string[];
-  pr: { number: number; url: string; state: string } | null;
-  createdAt: string;
-  archivedAt: string | null;
-}
+import type {
+  Agent,
+  CreationRequest,
+  CreationState,
+  Workspace,
+  WorkspaceStatus,
+} from "../shared/types.js";
+export type { WorkspaceStatus, Agent, CreationRequest, CreationState, Workspace };
 
 interface WorkspaceRow {
   id: string;
