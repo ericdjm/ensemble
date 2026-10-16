@@ -66,6 +66,8 @@ Spec §8, assessed on October 15, 2026. "Automated" means a Vitest test on `maco
 
 ## Owner-only checks after plan v2
 
+Step-by-step instructions with expected results are in `docs/owner-checks.md`.
+
 - A real `claude attach` through Ensemble (Phase 3).
 - A real handoff between two live sessions on the owner's subscription (the fake-agent tests cover delivery and logging; one real two-line prompt proved paste delivery).
 - The v1 items above: Remote Control on the phone, a real Codex session, a real PR, the fresh-Mac quickstart, a live Claude permission prompt.

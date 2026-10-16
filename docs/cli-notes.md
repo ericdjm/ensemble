@@ -134,4 +134,4 @@ A temporary loopback HTTP server returned a harmless JSON response. `curl -s -m 
 - Test silent, bounded hook capture with a separate stable loopback listener, non-loopback UI binding, restart replay, duplicate delivery, concurrent writers, size limits, storage failure, and cleared-history replay rejection.
 - Verify Codex hook injection via `-c`, the one-time trust flow, and the `notify` fallback in deliberate manual checks.
 
-The implementation plan is in `docs/architecture.md` and is awaiting owner approval. These notes record evidence and required checks; they do not mark the build or the live integrations as verified.
+The implementation plan in `docs/architecture.md` was approved on October 14, 2026 and built (v1 and plan v2). These notes record evidence and required checks; items not marked as run on the real binaries remain unverified, and the owner-only checks are listed in `docs/owner-checks.md`.

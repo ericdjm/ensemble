@@ -2,7 +2,7 @@
 
 Agreed with the owner on October 15, 2026 after v1 (M0–M7) shipped. Build in order; each phase ends with tests, a commit, and a push, as in v1.
 
-**Status: all four phases shipped on October 15, 2026.** Remaining owner-only checks are listed in `docs/acceptance.md` (a real `claude attach` through Ensemble, a real handoff between two live subscription sessions, Remote Control on the phone, a real Codex session, a real PR).
+**Status: all four phases shipped on October 15, 2026.** Remaining owner-only checks are listed in `docs/acceptance.md` with a walkthrough in `docs/owner-checks.md` (a real `claude attach` through Ensemble, a real handoff between two live subscription sessions, Remote Control on the phone, a real Codex session, a real PR).
 
 ## Decisions and pushback already settled
 
