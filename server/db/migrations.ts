@@ -156,4 +156,14 @@ CREATE TABLE relays (
 );
 `,
   },
+  {
+    id: 5,
+    sql: `
+ALTER TABLE sessions ADD COLUMN label TEXT;
+ALTER TABLE sessions ADD COLUMN notes TEXT;
+ALTER TABLE sessions ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE sessions ADD COLUMN adopted INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE sessions ADD COLUMN claude_agent_id TEXT;
+`,
+  },
 ];

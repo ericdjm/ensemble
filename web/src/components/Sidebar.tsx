@@ -11,6 +11,7 @@ export interface SidebarProps {
   selectedId: string | null;
   onAddRepo: () => void;
   onNewWorkspace: (repoId: string) => void;
+  onClaudeAgents: () => void;
   onNavigate: () => void;
 }
 
@@ -48,6 +49,7 @@ export function Sidebar({
   selectedId,
   onAddRepo,
   onNewWorkspace,
+  onClaudeAgents,
   onNavigate,
 }: SidebarProps) {
   const [showArchived, setShowArchived] = useState(false);
@@ -141,14 +143,23 @@ export function Sidebar({
           );
         })}
       </div>
-      <label className="flex items-center gap-2 px-3 py-2 text-xs text-neutral-500">
-        <input
-          type="checkbox"
-          checked={showArchived}
-          onChange={(e) => setShowArchived(e.target.checked)}
-        />
-        Show archived
-      </label>
+      <div className="flex items-center gap-2 px-3 py-2 text-xs text-neutral-500">
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={showArchived}
+            onChange={(e) => setShowArchived(e.target.checked)}
+          />
+          Show archived
+        </label>
+        <button
+          className="btn-ghost ml-auto text-xs"
+          onClick={onClaudeAgents}
+          title="List and attach Claude background sessions (claude --bg)"
+        >
+          Claude agents…
+        </button>
+      </div>
     </nav>
   );
 }

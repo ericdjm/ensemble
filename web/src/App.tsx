@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { PRODUCT_NAME } from "../../shared/brand.js";
 import { AddRepoDialog } from "./components/AddRepoDialog.js";
 import { ArchiveDialog } from "./components/ArchiveDialog.js";
+import { ClaudeAgentsDialog } from "./components/ClaudeAgentsDialog.js";
 import { DoctorPage } from "./components/DoctorPage.js";
 import { NewWorkspaceDialog } from "./components/NewWorkspaceDialog.js";
 import { SettingsDialog } from "./components/SettingsDialog.js";
@@ -15,7 +16,8 @@ type DialogState =
   | { kind: "add-repo" }
   | { kind: "new-workspace"; repoId: string | null }
   | { kind: "archive"; workspaceId: string }
-  | { kind: "settings" };
+  | { kind: "settings" }
+  | { kind: "claude-agents" };
 
 export function App() {
   const ui = useUiState();
@@ -107,6 +109,7 @@ export function App() {
             selectedId={selected?.id ?? null}
             onAddRepo={() => setDialog({ kind: "add-repo" })}
             onNewWorkspace={(repoId) => setDialog({ kind: "new-workspace", repoId })}
+            onClaudeAgents={() => setDialog({ kind: "claude-agents" })}
             onNavigate={() => setSidebarOpen(false)}
           />
         </div>
@@ -156,6 +159,9 @@ export function App() {
 
       {dialog.kind === "add-repo" && <AddRepoDialog onClose={() => setDialog({ kind: "none" })} />}
       {dialog.kind === "settings" && <SettingsDialog onClose={() => setDialog({ kind: "none" })} />}
+      {dialog.kind === "claude-agents" && (
+        <ClaudeAgentsDialog onClose={() => setDialog({ kind: "none" })} />
+      )}
       {dialog.kind === "new-workspace" && (
         <NewWorkspaceDialog
           repos={repos}

@@ -456,6 +456,34 @@ export function registerRoutes(app: FastifyInstance, s: Services): void {
     }
   };
 
+  app.get("/api/claude-agents", async () => s.sessions.claudeAgents());
+  app.post<{ Params: { id: string } }>(
+    "/api/claude-agents/:id/attach",
+    { schema: { params: idParam } },
+    async (request, reply) => reply.code(202).send(await s.sessions.adopt(request.params.id)),
+  );
+
+  app.patch<{
+    Params: { id: string };
+    Body: { label?: string | null; notes?: string | null; pinned?: boolean };
+  }>(
+    "/api/sessions/:id",
+    {
+      schema: {
+        params: idParam,
+        body: {
+          type: "object",
+          properties: {
+            label: { type: ["string", "null"], maxLength: 80 },
+            notes: { type: ["string", "null"], maxLength: 20000 },
+            pinned: { type: "boolean" },
+          },
+        },
+      },
+    },
+    async (request) => s.sessions.setMeta(request.params.id, request.body ?? {}),
+  );
+
   app.get<{ Params: { id: string } }>(
     "/api/sessions/:id/last-answer",
     { schema: { params: idParam } },

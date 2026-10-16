@@ -23,6 +23,17 @@ if (argv[0] === "login" && argv[1] === "status") {
   else if (mode === "out") process.stderr.write("Not logged in\n");
   else process.stderr.write("something unexpected\n");
   process.exit(mode === "out" ? 1 : 0);
+} else if (argv[0] === "agents" && argv.includes("--json")) {
+  // `claude agents --json --all`: the fixture array from $FAKE_AGENTS_JSON (or a file path in $FAKE_AGENTS_FILE).
+  const text = process.env.FAKE_AGENTS_FILE
+    ? fs.readFileSync(process.env.FAKE_AGENTS_FILE, "utf8")
+    : (process.env.FAKE_AGENTS_JSON ?? "[]");
+  if (text === "FAIL") {
+    process.stderr.write("agents unavailable\n");
+    process.exit(1);
+  }
+  process.stdout.write(text + "\n");
+  process.exit(0);
 } else if (argv[0] === "auth" && argv[1] === "status") {
   const authMethod = process.env.FAKE_AUTH_METHOD ?? "claude.ai";
   if (authMethod === "garbage") {
@@ -66,9 +77,11 @@ if (argv[0] === "login" && argv[1] === "status") {
     if (m) hooks[m[1]] = [{ hooks: [{ type: "command", command: JSON.parse(m[2]) }] }];
   }
   const resumed = flags["--resume"] !== undefined;
+  const attached = positionals[0] === "attach" ? positionals[1] : null;
   const sessionId = resumed
     ? flags["--resume"]
     : (process.env.FAKE_SESSION_ID ?? crypto.randomUUID());
+  if (attached) process.stdout.write(`fake-agent attach=${attached}\n`);
   const prompt = positionals.pop();
 
   const fire = (hook_event_name, extra = {}) => {

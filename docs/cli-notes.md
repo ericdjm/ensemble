@@ -110,6 +110,10 @@ With the server running on 4800, `node bin/ensemble.js claude` was run from this
 
 One prompt was sent on the owner's subscription (authorised: "keep building until you've completed all the plans"). Through the server API, a Claude Code 2.1.300 session in this checkout received the two-line text "Reply with exactly the single word ENSEMBLE_OK and nothing else.\nThis second line belongs to the same prompt; do not comment on it." via `Tmux.pasteLine` (bracketed paste). Results: the `UserPromptSubmit` payload's `prompt` contained both lines (one prompt, not two submissions); the `Stop` payload had keys `session_id, transcript_path, cwd, scratchpad_dir, prompt_id, permission_mode, effort, hook_event_name, stop_hook_active, last_assistant_message, background_tasks, session_crons` and `last_assistant_message` was `"ENSEMBLE_OK"`; `last_answer` was stored with source `stop-payload` about 2 s after sending. `/exit` ended the session with exit 0. The official docs (code.claude.com/docs/en/hooks) document `last_assistant_message` on `Stop` and warn that the transcript file may not yet contain the final message at Stop time; the transcript format is documented as internal and unstable, so Ensemble's transcript fallback is best-effort only.
 
+### `claude agents --json --all` (runtime-tested October 15, 2026)
+
+On 2.1.300 the command printed a JSON array without a TTY. Entries: an interactive session `{pid, cwd, kind:"interactive", startedAt, sessionId, name, status:"busy"}` and a completed background session `{id, cwd, kind:"background", startedAt, sessionId, name, state:"done"}`. Field names match the documentation (code.claude.com/docs/en/agent-view). `claude attach <id|name>` takes over the current terminal; detach keys per the docs are Left arrow on an empty prompt, `/exit`, or Ctrl+Z; stopped sessions need the id. Not run through Ensemble here.
+
 ## Reproduced review cases
 
 ### Ignored files are not protected by a clean Git status

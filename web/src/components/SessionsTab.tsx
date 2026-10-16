@@ -266,6 +266,14 @@ export function SessionsTab({
         <>
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <AuthBadge session={selected} />
+            {selected.adopted && (
+              <span
+                className="rounded-full bg-neutral-200 px-2 py-0.5 text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200"
+                title="A Claude background session opened with `claude attach`; status comes from `claude agents --json`, not hooks. Detaching inside Claude ends this terminal but not the background session."
+              >
+                attached {selected.claudeAgentId}
+              </span>
+            )}
             {selected.remoteControl && selected.processState === "running" && (
               <span
                 className="rounded-full bg-purple-100 px-2 py-0.5 text-purple-900 dark:bg-purple-900/40 dark:text-purple-200"

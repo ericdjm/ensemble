@@ -1,10 +1,19 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { execFile } from "node:child_process";
-import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { Agent, LastAnswer, PendingInputs, Session } from "../shared/types.js";
+import type {
+  Agent,
+  ClaudeAgentView,
+  ClaudeAgentsView,
+  LastAnswer,
+  PendingInputs,
+  Session,
+} from "../shared/types.js";
 import { answerPreview } from "./answers.js";
+import { listClaudeAgents, statusFromAgent } from "./claude-agents.js";
+import { hasPending } from "./hooks/reducer.js";
 import type { Config } from "./config.js";
 import { statePaths } from "./config.js";
 import type { Db } from "./db/index.js";
@@ -76,6 +85,11 @@ export interface SessionRow {
   last_answer: string | null;
   last_answer_at: string | null;
   last_answer_source: Session["lastAnswerSource"];
+  label: string | null;
+  notes: string | null;
+  pinned: number;
+  adopted: number;
+  claude_agent_id: string | null;
   created_at: string;
   started_at: string | null;
   ended_at: string | null;
@@ -118,6 +132,11 @@ export function rowToSession(r: SessionRow): Session {
     lastAnswerAt: r.last_answer_at,
     lastAnswerSource: r.last_answer_source,
     lastAnswerPreview: answerPreview(r.last_answer),
+    label: r.label,
+    notes: r.notes,
+    pinned: r.pinned === 1,
+    adopted: r.adopted === 1,
+    claudeAgentId: r.claude_agent_id,
     createdAt: r.created_at,
     startedAt: r.started_at,
     endedAt: r.ended_at,
@@ -159,6 +178,8 @@ const DENIED_CLI_ARGS: Record<Agent, ReadonlySet<string>> = {
     "--print",
     "--settings",
     "--remote-control",
+    "--bg",
+    "--background",
     "--help",
     "-h",
     "--version",
@@ -227,6 +248,8 @@ export interface LaunchInput {
   /** Resume this exact CLI conversation id (set by resume()). */
   resumeCliSessionId?: string;
   predecessorId?: string;
+  /** Adopt a Claude background session: runs `claude attach <id>` instead of a new conversation (Phase 3). */
+  attachClaudeAgent?: { id: string; sessionId: string | null };
 }
 
 export interface SessionServiceDeps {
@@ -249,6 +272,8 @@ export class SessionService extends EventEmitter {
   private readonly extraAgentEnv: Record<string, string>;
   private cliCache = new Map<string, { path: string; at: number }>();
   private livenessTimer: NodeJS.Timeout | null = null;
+  private adoptedTimer: NodeJS.Timeout | null = null;
+  private adoptedPolling = false;
 
   constructor(deps: SessionServiceDeps) {
     super();
@@ -346,7 +371,14 @@ export class SessionService extends EventEmitter {
       `${shellQuote(process.execPath)} ${shellQuote(path.join(helpers, "hook-capture.mjs"))} ${adapter}`;
     const options: string[] = [];
     let remoteControlName: string | undefined;
-    if (input.agent === "claude") {
+    if (input.attachClaudeAgent) {
+      if (input.agent !== "claude")
+        throw new WorkspaceError("only Claude sessions can be attached");
+      if (!/^[A-Za-z0-9._-]{1,128}$/.test(input.attachClaudeAgent.id))
+        throw new WorkspaceError("invalid background session id");
+      // No --settings: hooks cannot be injected into a running session; status comes from `claude agents --json`.
+      options.push("attach", input.attachClaudeAgent.id);
+    } else if (input.agent === "claude") {
       const hooks: Record<string, unknown> = {};
       for (const event of CLAUDE_HOOK_EVENTS) {
         hooks[event] = [
@@ -394,8 +426,8 @@ export class SessionService extends EventEmitter {
       .prepare(
         `INSERT INTO sessions (id, workspace_id, agent, tmux_name, remote_control, status, process_state, freshness, auth_mode,
           billing_opt_in, billing_ack, predecessor_id, hook_generation, last_seq, pending_inputs_json, hook_token_hash,
-          cli_options_json, created_at, started_at)
-         VALUES (?, ?, ?, ?, ?, 'starting', 'running', 'unknown', 'unchecked', ?, ?, ?, 1, 0, ?, ?, ?, ?, ?)`,
+          cli_options_json, adopted, claude_agent_id, cli_session_id, created_at, started_at)
+         VALUES (?, ?, ?, ?, ?, 'starting', 'running', 'unknown', 'unchecked', ?, ?, ?, 1, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -409,6 +441,9 @@ export class SessionService extends EventEmitter {
         JSON.stringify(EMPTY_PENDING),
         hashToken(token),
         JSON.stringify(options),
+        input.attachClaudeAgent ? 1 : 0,
+        input.attachClaudeAgent?.id ?? null,
+        input.attachClaudeAgent?.sessionId ?? null,
         now,
         now,
       );
@@ -439,6 +474,147 @@ export class SessionService extends EventEmitter {
         .run(`tmux: ${(e as Error).message}`, nowIso(), id);
     }
     this.ensureLiveness();
+    if (input.attachClaudeAgent) this.ensureAdoptedPolling();
+    return this.emitChanged(id);
+  }
+
+  /** `claude agents --json --all`, annotated with the Ensemble sessions and workspaces it matches. */
+  async claudeAgents(): Promise<ClaudeAgentsView> {
+    let cli: { path: string };
+    try {
+      cli = await this.resolveCli("claude");
+    } catch (e) {
+      return { ok: false, agents: [], error: (e as Error).message, checkedAt: nowIso() };
+    }
+    const report = await listClaudeAgents({ cliPath: cli.path, env: this.toolEnv() });
+    const sessions = this.list();
+    const workspaces = this.workspaces.list().filter((w) => w.status !== "archived");
+    const agents: ClaudeAgentView[] = report.agents.map((a) => {
+      const own =
+        sessions.find(
+          (s) => s.adopted && s.claudeAgentId === a.id && s.processState === "running",
+        ) ??
+        sessions.find((s) => a.sessionId !== null && s.cliSessionId === a.sessionId) ??
+        null;
+      const ws =
+        workspaces.find((w) => w.path === a.cwd || w.path === realpathOrNull(a.cwd)) ?? null;
+      return { ...a, ensembleSessionId: own?.id ?? null, workspaceId: ws?.id ?? null };
+    });
+    return { ...report, agents };
+  }
+
+  /** Adopts a Claude background session: an in-place workspace for its cwd plus a `claude attach` session. */
+  async adopt(agentId: string): Promise<Session> {
+    const report = await this.claudeAgents();
+    if (!report.ok) throw new WorkspaceError(report.error ?? "could not list Claude sessions", 409);
+    const agent = report.agents.find((a) => a.id === agentId && a.kind === "background");
+    if (!agent) throw new WorkspaceError("background session not found", 404);
+    if (agent.ensembleSessionId)
+      throw new WorkspaceError("this background session is already attached in Ensemble", 409);
+    const ws = await this.workspaces.createInPlace({ path: agent.cwd, agent: "claude" });
+    return this.launch({
+      workspaceId: ws.id,
+      agent: "claude",
+      attachClaudeAgent: { id: agentId, sessionId: agent.sessionId },
+    });
+  }
+
+  /** Environment for direct tool invocations (`claude agents --json`): API-key variables stripped unless opted in. */
+  private toolEnv(): Record<string, string> {
+    const env: Record<string, string> = {};
+    const strip: readonly string[] = this.config.billingOptIn ? [] : STRIPPED_ENV_VARS;
+    for (const [k, v] of Object.entries(process.env)) {
+      if (v !== undefined && !strip.includes(k)) env[k] = v;
+    }
+    return { ...env, ...this.extraAgentEnv };
+  }
+
+  ensureAdoptedPolling(intervalMs = 5000): void {
+    if (this.adoptedTimer) return;
+    this.adoptedTimer = setInterval(() => {
+      void this.refreshAdopted();
+    }, intervalMs);
+    this.adoptedTimer.unref();
+  }
+
+  stopAdoptedPolling(): void {
+    if (this.adoptedTimer) clearInterval(this.adoptedTimer);
+    this.adoptedTimer = null;
+  }
+
+  /** Status for adopted sessions comes from `claude agents --json`, not hooks (weaker needs-input detection). */
+  async refreshAdopted(): Promise<void> {
+    if (this.adoptedPolling) return;
+    this.adoptedPolling = true;
+    try {
+      const rows = this.db
+        .prepare("SELECT * FROM sessions WHERE adopted = 1 AND process_state = 'running'")
+        .all() as SessionRow[];
+      if (rows.length === 0) {
+        this.stopAdoptedPolling();
+        return;
+      }
+      const report = await this.claudeAgents();
+      for (const row of rows) {
+        const agent = report.ok
+          ? report.agents.find((a) => a.id === row.claude_agent_id)
+          : undefined;
+        const freshness = report.ok && agent ? "current" : "stale";
+        const next = agent ? statusFromAgent(agent) : null;
+        const status = next ? next.status : row.status;
+        const pending = next ? JSON.stringify(next.pending) : row.pending_inputs_json;
+        const cliSessionId = agent?.sessionId ?? row.cli_session_id;
+        if (
+          status === row.status &&
+          pending === row.pending_inputs_json &&
+          freshness === row.freshness &&
+          cliSessionId === row.cli_session_id
+        )
+          continue;
+        this.db
+          .prepare(
+            "UPDATE sessions SET status = ?, pending_inputs_json = ?, freshness = ?, cli_session_id = ? WHERE id = ?",
+          )
+          .run(status, pending, freshness, cliSessionId, row.id);
+        const notify =
+          status !== row.status &&
+          (status === "needs_input" || (status === "idle" && row.status === "working"));
+        this.emitChanged(
+          row.id,
+          notify && hasPending(JSON.parse(pending) as PendingInputs) === (status === "needs_input"),
+        );
+      }
+    } finally {
+      this.adoptedPolling = false;
+    }
+  }
+
+  /** Label, notes, pin (docs/plan-v2.md Phase 4). */
+  setMeta(
+    id: string,
+    meta: { label?: string | null; notes?: string | null; pinned?: boolean },
+  ): Session {
+    this.row(id);
+    const fields: string[] = [];
+    const values: unknown[] = [];
+    if (meta.label !== undefined) {
+      const label = meta.label?.trim() ?? "";
+      if (label.length > 80) throw new WorkspaceError("label must be at most 80 characters");
+      fields.push("label = ?");
+      values.push(label || null);
+    }
+    if (meta.notes !== undefined) {
+      const notes = meta.notes ?? "";
+      if (notes.length > 20_000) throw new WorkspaceError("notes must be at most 20000 characters");
+      fields.push("notes = ?");
+      values.push(notes || null);
+    }
+    if (meta.pinned !== undefined) {
+      fields.push("pinned = ?");
+      values.push(meta.pinned ? 1 : 0);
+    }
+    if (fields.length > 0)
+      this.db.prepare(`UPDATE sessions SET ${fields.join(", ")} WHERE id = ?`).run(...values, id);
     return this.emitChanged(id);
   }
 
@@ -638,6 +814,7 @@ export class SessionService extends EventEmitter {
   stopLiveness(): void {
     if (this.livenessTimer) clearInterval(this.livenessTimer);
     this.livenessTimer = null;
+    this.stopAdoptedPolling();
   }
 
   /** Reconciles process_state/exit_code with tmux (docs §6.4 and §7.6). */
@@ -669,6 +846,14 @@ export class SessionService extends EventEmitter {
         .run(processState, exitCode, status, processState, nowIso(), row.id);
       this.emitChanged(row.id, false);
     }
+  }
+}
+
+function realpathOrNull(p: string): string | null {
+  try {
+    return realpathSync(p);
+  } catch {
+    return null;
   }
 }
 

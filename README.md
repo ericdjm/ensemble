@@ -60,6 +60,10 @@ Agents do not talk to each other on their own. Ensemble captures each session's 
 
 Handoffs and relays are typed into the receiving CLI exactly as if you had pasted them; they cannot answer permission prompts, and a busy target simply queues the text as its next prompt.
 
+## Claude background sessions
+
+Sessions you started with `claude --bg` are listed under **Claude agents…** at the bottom of the sidebar, read from `claude agents --json --all` (the documented way to read session state from outside Claude Code). **Attach** opens one with `claude attach <id>` inside an Ensemble terminal in that session's checkout (an in-place workspace). Hooks cannot be injected into a running session, so the status of an attached session comes from the same listing, polled every five seconds; needs-input detection is weaker than for sessions Ensemble started, and no last answer is captured. Detaching inside Claude ends the Ensemble terminal but not the background session. Interactive sessions running in other terminals are listed for information only; start them with `ensemble claude` to manage them.
+
 ## Your subscription and credentials
 
 Ensemble behaves like a terminal multiplexer. It launches your own installed `claude` and `codex` binaries interactively, inside tmux, using the CLIs' own login. It never reads, copies, stores, or proxies your credentials or tokens, never implements a login flow of its own, and never uses headless or SDK modes. By default it removes API-key environment variables from agent sessions and, inside the session itself, asks the CLI for its non-secret authentication mode (`claude auth status --json`) before starting it. If the mode is not a subscription login the launch is refused with the reason shown in the terminal. An opt-in in Settings allows API-key billing with a visible warning; unverified modes additionally need a per-session acknowledgement and are never labelled subscription-verified. For Codex the same check uses `codex login status`; only a ChatGPT login counts as a subscription. An automated check in CI fails if the source code ever references the CLIs' credential files.

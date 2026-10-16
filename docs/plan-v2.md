@@ -34,7 +34,9 @@ Implemented as described below; see `docs/architecture.md` §7.7 and `docs/accep
 - "Ask all": broadcast one prompt to all running sessions in a workspace.
 - Bounded relay (opt-in, off by default): two sessions, max rounds, each hop logged as an `ensemble.relay` event; stops at the limit or when a reply contains a configurable done marker.
 
-## Phase 3 (optional): adopt Claude background sessions (~0.5 day)
+## Phase 3 (optional): adopt Claude background sessions (~0.5 day) — done October 15, 2026
+
+Implemented as described below; see `docs/architecture.md` §7.8. `claude agents --json --all` was verified on the installed 2.1.300 (it also lists interactive sessions, which stay non-adoptable). A real `claude attach` through Ensemble has not been run; it is an owner check in `docs/acceptance.md`.
 
 - `claude agents --json` to list `--bg` sessions; open a terminal by running `claude attach <id>` inside an Ensemble-owned tmux session. Status from the JSON and transcript, not hooks (weaker needs-input). Claude only. Skip unless the owner uses `--bg`.
 

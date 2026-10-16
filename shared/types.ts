@@ -195,9 +195,48 @@ export interface Session {
   lastAnswerAt: string | null;
   lastAnswerSource: "stop-payload" | "codex-notify" | "transcript" | null;
   lastAnswerPreview: string | null;
+  /** User-set label and notes; pinned sessions sort first (docs/plan-v2.md Phase 4). */
+  label: string | null;
+  notes: string | null;
+  pinned: boolean;
+  /** True for a `claude attach <id>` session adopted from Claude's background sessions (Phase 3). */
+  adopted: boolean;
+  claudeAgentId: string | null;
   createdAt: string;
   startedAt: string | null;
   endedAt: string | null;
+}
+
+/** One entry of `claude agents --json --all` (documented fields only). */
+export interface ClaudeAgent {
+  id: string | null;
+  cwd: string;
+  kind: "interactive" | "background";
+  startedAt: string | null;
+  sessionId: string | null;
+  name: string | null;
+  state: string | null;
+  status: string | null;
+  waitingFor: string | null;
+  pid: number | null;
+}
+
+export interface ClaudeAgentView extends ClaudeAgent {
+  /** The Ensemble session that launched or adopted this Claude session, when known. */
+  ensembleSessionId: string | null;
+  /** The Ensemble workspace whose path equals the session's cwd, when known. */
+  workspaceId: string | null;
+}
+
+export interface ClaudeAgentsReport {
+  ok: boolean;
+  agents: ClaudeAgent[];
+  error: string | null;
+  checkedAt: string;
+}
+
+export interface ClaudeAgentsView extends Omit<ClaudeAgentsReport, "agents"> {
+  agents: ClaudeAgentView[];
 }
 
 export interface LastAnswer {

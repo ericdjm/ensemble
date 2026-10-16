@@ -48,8 +48,18 @@ Spec §8, assessed on October 15, 2026. "Automated" means a Vitest test on `maco
 | Relay refused unless enabled; ends on marker, at the hop limit, on stop, on a busy or dead target; every hop logged; interrupted at restart  | Automated          | `test/relay.test.ts`                                                                                                                                      |
 | UI: Last answer panel, Send to… dialog with templates, Ask all, Relay dialog and banner, Settings opt-in                                     | Manual             | Typechecked and built; reviewed in the browser                                                                                                            |
 
+## Plan v2 Phase 3 (October 15, 2026): Claude background sessions
+
+| Item                                                                                                                  | Status             | Evidence                                                                                                                                |
+| --------------------------------------------------------------------------------------------------------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `claude agents --json --all` parsed with documented fields only; failures reported softly                             | Automated + manual | `test/claude-agents.test.ts`; the real listing on 2.1.300 returned the documented fields for one interactive and one background session |
+| Attach creates/reuses the in-place workspace for the session's cwd and runs `claude attach <id>` without `--settings` | Automated          | `test/claude-agents.test.ts` (fake agent records argv)                                                                                  |
+| Status follows the listing (busy/waiting/idle), stale on listing failure; second attach refused; non-git cwd refused  | Automated          | `test/claude-agents.test.ts`                                                                                                            |
+| A real `claude attach` through Ensemble (terminal takeover, detach behaviour)                                         | Owner              | Needs a `claude --bg` session of the owner's; not run here to avoid resuming their conversations                                        |
+
 ## Known limitations
 
 - Codex: hook injection via `-c` and the one-time `/hooks` trust flow are unverified against the installed binary; only `login status` was verified. Needs-input detection is best-effort until hooks are trusted.
 - Claude workspace trust: hooks start only after the trust prompt is accepted in the terminal for each new worktree.
 - The Codex binary bundled with the ChatGPT app is not on PATH; set its path in Settings or install the standalone CLI.
+- Adopted (`claude attach`) sessions have no hooks: status is polled from `claude agents --json`, no last answer is captured, and handoffs to them are typed into the attached terminal like any other prompt.
