@@ -128,4 +128,10 @@ ALTER TABLE sessions ADD COLUMN hook_token_hash TEXT;
 ALTER TABLE sessions ADD COLUMN cli_options_json TEXT NOT NULL DEFAULT '[]';
 `,
   },
+  {
+    id: 3,
+    sql: `
+ALTER TABLE workspaces ADD COLUMN kind TEXT NOT NULL DEFAULT 'worktree';
+`,
+  },
 ];

@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import type { Config } from "./config.js";
 import { statePaths } from "./config.js";
@@ -16,13 +16,14 @@ import {
   sanitizeWorkspaceName,
 } from "./names.js";
 import { allocatePortBlock } from "./ports.js";
-import { effectiveRepoConfig, getRepo, listRepos, type Repo } from "./repos.js";
+import { effectiveRepoConfig, getRepo, listRepos, registerRepo, type Repo } from "./repos.js";
 import type { Tmux } from "./tmux.js";
 import type {
   Agent,
   CreationRequest,
   CreationState,
   Workspace,
+  WorkspaceKind,
   WorkspaceStatus,
   RunState,
   PrInfo,
@@ -32,6 +33,7 @@ export type { WorkspaceStatus, Agent, CreationRequest, CreationState, Workspace 
 interface WorkspaceRow {
   id: string;
   repo_id: string;
+  kind: WorkspaceKind;
   name: string;
   branch: string;
   path: string;
@@ -77,6 +79,7 @@ function rowToWorkspace(r: WorkspaceRow): Workspace {
   return {
     id: r.id,
     repoId: r.repo_id,
+    kind: r.kind,
     name: r.name,
     branch: r.branch,
     path: r.path,
@@ -100,6 +103,15 @@ export interface CreateWorkspaceInput {
   prompt?: string;
   remoteControl?: boolean;
 }
+
+export interface CreateInPlaceInput {
+  /** Any directory inside the checkout; its git top level becomes the workspace path. */
+  path: string;
+  agent: Agent;
+}
+
+/** Name given to a repo's in-place workspace (suffixed when a worktree workspace already took it). */
+export const INPLACE_WORKSPACE_NAME = "checkout";
 
 export class WorkspaceError extends Error {
   constructor(
@@ -271,6 +283,77 @@ export class WorkspaceService extends EventEmitter {
     insert();
     const ws = this.get(id);
     this.emit("changed", ws);
+    return ws;
+  }
+
+  /**
+   * Finds or creates the in-place workspace for the checkout containing `input.path` (docs/plan-v2.md
+   * Phase 1). Nothing is copied, no setup script runs, no worktree is created; the checkout is used as is.
+   * Running it inside a worktree that Ensemble created returns that worktree's workspace instead.
+   */
+  async createInPlace(input: CreateInPlaceInput): Promise<Workspace> {
+    let resolved: string;
+    try {
+      resolved = realpathSync(input.path);
+    } catch {
+      throw new WorkspaceError(`${input.path} does not exist`, 404);
+    }
+    let top: string;
+    try {
+      top = realpathSync(await git(["rev-parse", "--show-toplevel"], { cwd: resolved }));
+    } catch {
+      throw new WorkspaceError(`${input.path} is not inside a git repository`, 409);
+    }
+    const existing = (
+      this.db.prepare("SELECT * FROM workspaces WHERE status != 'archived'").all() as WorkspaceRow[]
+    ).find((row) => {
+      try {
+        return realpathSync(row.path) === top;
+      } catch {
+        return false;
+      }
+    });
+    const branch = await currentBranch(top);
+    if (existing) {
+      if (existing.kind !== "inplace") return rowToWorkspace(existing);
+      if (existing.status !== "ready")
+        throw new WorkspaceError(`workspace ${existing.name} is ${existing.status}`, 409);
+      return this.update(existing.id, { branch });
+    }
+    const repo = await registerRepo(this.db, top);
+    const taken = new Set(
+      (
+        this.db.prepare("SELECT name FROM workspaces WHERE repo_id = ?").all(repo.id) as Array<{
+          name: string;
+        }>
+      ).map((r) => r.name),
+    );
+    let name = INPLACE_WORKSPACE_NAME;
+    for (let i = 2; taken.has(name); i++) name = `${INPLACE_WORKSPACE_NAME}-${i}`;
+    const creation: CreationState = { request: { agent: input.agent }, steps: { approval: true } };
+    const id = randomUUID();
+    this.db.transaction(() => {
+      const port = allocatePortBlock(this.db, this.config.portBase);
+      this.db
+        .prepare(
+          "INSERT INTO workspaces (id, repo_id, kind, name, branch, path, base_branch, port, status, creation_json, created_at) " +
+            "VALUES (?, ?, 'inplace', ?, ?, ?, ?, ?, 'ready', ?, ?)",
+        )
+        .run(
+          id,
+          repo.id,
+          name,
+          branch,
+          top,
+          repo.defaultBase,
+          port,
+          JSON.stringify(creation),
+          nowIso(),
+        );
+    })();
+    const ws = this.get(id);
+    this.emit("changed", ws);
+    this.emit("ready", ws);
     return ws;
   }
 
@@ -533,6 +616,17 @@ export class WorkspaceService extends EventEmitter {
    */
   async reconcile(): Promise<void> {
     for (const repo of listRepos(this.db)) {
+      for (const ws of this.list().filter(
+        (w) => w.repoId === repo.id && w.kind === "inplace" && w.status !== "archived",
+      )) {
+        if (!existsSync(ws.path)) {
+          this.update(id(ws), {
+            status: "archived",
+            archived_at: nowIso(),
+            error: "checkout missing at startup",
+          });
+        }
+      }
       let registered: Array<{ path: string }>;
       try {
         await git(["worktree", "prune"], { cwd: repo.path });
@@ -542,7 +636,9 @@ export class WorkspaceService extends EventEmitter {
         throw e;
       }
       const paths = new Set(registered.map((w) => w.path));
-      for (const ws of this.list().filter((w) => w.repoId === repo.id && w.status !== "archived")) {
+      for (const ws of this.list().filter(
+        (w) => w.repoId === repo.id && w.kind !== "inplace" && w.status !== "archived",
+      )) {
         if (ws.creation.steps.worktree && !paths.has(ws.path)) {
           this.update(id(ws), {
             status: "archived",
@@ -562,3 +658,8 @@ export class WorkspaceService extends EventEmitter {
 }
 
 const id = (ws: Workspace) => ws.id;
+
+/** Current branch name, or "HEAD" when detached. */
+export async function currentBranch(cwd: string): Promise<string> {
+  return git(["rev-parse", "--abbrev-ref", "HEAD"], { cwd });
+}

@@ -46,8 +46,9 @@ function NewSessionDialog({
       <form className="space-y-3 text-sm" onSubmit={submit}>
         {hasRunning && (
           <p className="rounded bg-amber-50 p-2 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-            Another session is already running in this workspace. Sessions share the branch and
-            files; concurrent edits can conflict.
+            {workspace.kind === "inplace"
+              ? "Another agent is already running in this checkout. Two agents editing the same files will conflict; create a workspace (⌘N) to give the second one its own worktree."
+              : "Another session is already running in this workspace. Sessions share the branch and files; concurrent edits can conflict."}
           </p>
         )}
         <fieldset>

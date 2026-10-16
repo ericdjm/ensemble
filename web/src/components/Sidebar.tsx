@@ -94,7 +94,17 @@ export function Sidebar({
                       }}
                     >
                       <span className="min-w-0">
-                        <span className="block truncate">{ws.name}</span>
+                        <span className="block truncate">
+                          {ws.name}
+                          {ws.kind === "inplace" && (
+                            <span
+                              className="ml-1.5 rounded bg-neutral-200 px-1 text-[10px] font-medium uppercase tracking-wide text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200"
+                              title="Your own checkout, launched with `ensemble claude` or `ensemble codex`; not an isolated worktree"
+                            >
+                              checkout
+                            </span>
+                          )}
+                        </span>
                         <span className="block truncate text-xs text-neutral-500">
                           {ws.pr ? (
                             <>

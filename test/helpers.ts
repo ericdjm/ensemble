@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { buildApp, type App } from "../server/app.js";
-import { defaultConfig, ensureStateDirs, pickFreeHookPort } from "../server/config.js";
+import { defaultConfig, ensureStateDirs, pickFreeHookPort, saveConfig } from "../server/config.js";
 import { openDb, type Db } from "../server/db/index.js";
 import { Tmux } from "../server/tmux.js";
 
@@ -25,21 +25,25 @@ export async function makeTestApp(
     cliPath?: string;
     ghBinary?: string;
     ghEnv?: Record<string, string>;
+    /** UI port used for the Host allowlist (and for listen() when a test needs a real socket). */
+    port?: number;
   } = {},
 ): Promise<TestEnv> {
+  const port = opts.port ?? TEST_PORT;
   const dir = mkdtempSync(path.join(os.tmpdir(), "ensemble-test-"));
   ensureStateDirs(dir);
   const db = openDb(path.join(dir, "ensemble.db"));
   const config = defaultConfig("test-token-0123456789abcdef", await pickFreeHookPort());
   if (opts.cliPath) config.cliPaths = { claude: opts.cliPath, codex: opts.cliPath };
   config.workspaceRoot = path.join(dir, "workspaces-root");
+  saveConfig(dir, config);
   const tmux = new Tmux({ socketName: `ensemble-test-${process.pid}` });
   const app = await buildApp({
     config,
     db,
     stateDir: dir,
     host: "127.0.0.1",
-    port: TEST_PORT,
+    port,
     webDist: path.join(dir, "no-web"),
     tmux,
     ...(opts.extraAgentEnv ? { extraAgentEnv: opts.extraAgentEnv } : {}),
@@ -52,7 +56,7 @@ export async function makeTestApp(
     app,
     tmux,
     token: config.uiToken,
-    host: `127.0.0.1:${TEST_PORT}`,
+    host: `127.0.0.1:${port}`,
     cleanup: async () => {
       await app.fastify.close();
       await tmux.killServer();

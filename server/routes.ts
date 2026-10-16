@@ -205,6 +205,29 @@ export function registerRoutes(app: FastifyInstance, s: Services): void {
     },
   );
 
+  app.post<{ Body: { path: string; agent?: "claude" | "codex" } }>(
+    "/api/workspaces/inplace",
+    {
+      schema: {
+        body: {
+          type: "object",
+          required: ["path"],
+          properties: {
+            path: { type: "string", minLength: 1 },
+            agent: { enum: ["claude", "codex"] },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const ws = await s.workspaces.createInPlace({
+        path: request.body.path,
+        agent: request.body.agent ?? "claude",
+      });
+      return reply.code(201).send(ws);
+    },
+  );
+
   app.post<{ Params: { id: string } }>(
     "/api/workspaces/:id/continue",
     { schema: { params: idParam } },
@@ -342,6 +365,7 @@ export function registerRoutes(app: FastifyInstance, s: Services): void {
       prompt?: string;
       remoteControl?: boolean;
       billingAck?: boolean;
+      cliArgs?: string[];
     };
   }>(
     "/api/sessions",
@@ -356,6 +380,7 @@ export function registerRoutes(app: FastifyInstance, s: Services): void {
             prompt: { type: "string", maxLength: 100000 },
             remoteControl: { type: "boolean" },
             billingAck: { type: "boolean" },
+            cliArgs: { type: "array", maxItems: 64, items: { type: "string", maxLength: 8192 } },
           },
         },
       },

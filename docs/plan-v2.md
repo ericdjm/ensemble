@@ -9,7 +9,9 @@ Agreed with the owner on October 15, 2026 after v1 (M0–M7) shipped. Build in o
 - Agent-to-agent communication is human-mediated handoffs. No autonomous orchestrator. A bounded relay (max N rounds) is allowed only as an explicit opt-in, off by default.
 - Usage/cost dashboards stay out of scope.
 
-## Phase 1: terminal-first launching and in-place workspaces (~1 day)
+## Phase 1: terminal-first launching and in-place workspaces (~1 day) — done October 15, 2026
+
+Implemented as described below; see `docs/architecture.md` §6.4a and `docs/acceptance.md` ("Plan v2 Phase 1"). Deviations: the CLI finds the server through `~/.ensemble/server.json` (host, port, tmux socket) rather than a fixed port; auto-detach on agent exit uses a tmux `pane-died` hook scoped to the caller's tty; `--help`/`--version` pass straight through to the real binary.
 
 - CLI: `ensemble claude [args...]` and `ensemble codex [args...]`, run from any directory.
   - Finds the git top level; registers the repo if unknown (existing `registerRepo`).

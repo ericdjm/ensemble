@@ -22,13 +22,33 @@ pnpm start
 
 `pnpm start` builds if needed, starts the server on `127.0.0.1:4800`, and prints a login URL containing your access token (stored in `~/.ensemble/config.json`, mode 0600). `ensemble token` prints it again; `ensemble token --rotate` replaces it.
 
-Then: add a repo, create a workspace (⌘N), and start a session. Agents run inside a dedicated tmux server, so you can also attach from any terminal:
+Then: add a repo, create a workspace (⌘N), and start a session, or run `ensemble claude` inside a checkout (see below). Agents run inside a dedicated tmux server, so you can also attach from any terminal:
 
 ```sh
 tmux -L ensemble attach -t ens-<session-id-prefix>
 ```
 
 The Doctor page (top of the sidebar) shows which binaries were found, whether `gh` is logged in, and the state of the loopback hook listener. A version check only proves a binary runs; it does not prove that it is logged in.
+
+## Launching from your own terminal
+
+You do not have to start sessions from the browser. In any checkout:
+
+```sh
+ensemble claude            # or: ensemble codex
+ensemble claude --model opus "fix the failing test"
+```
+
+This starts the real `claude`/`codex` binary in your current checkout (an "in-place" workspace, marked **checkout** in the sidebar: no worktree, no copy, no setup script) through the same tmux, preflight, and hook path as a browser-started session, then attaches your terminal to it. You type in your own terminal; the browser shows the same session, its status, and its events. `Ctrl-b d` detaches and leaves the session running; when the agent exits, your terminal returns on its own with the agent's exit code. The server must be running (`ensemble start` in another terminal) and the command needs an interactive terminal.
+
+Arguments after `claude`/`codex` go to the CLI unchanged, except that non-interactive forms (`-p`/`--print`, `codex exec`, `login`, ...) and Ensemble's own flags (`--settings`, `--remote-control`) are rejected; run the binary directly for those. `--help` and `--version` run the binary directly without a session. A convenient setup is
+
+```sh
+alias claude='ensemble claude'
+alias codex='ensemble codex'
+```
+
+Inside a session `ENSEMBLE_INSIDE=1` is set, so the alias cannot recurse, and the real binary is resolved from your login-shell `PATH` with aliases ignored. One agent per checkout is the intended use: a second `ensemble claude` in the same checkout gets a warning in the browser, because two agents editing the same files conflict; use a workspace (⌘N) for the second one. "Forget" on an in-place workspace stops its sessions and drops the record; it never removes files.
 
 ## Your subscription and credentials
 

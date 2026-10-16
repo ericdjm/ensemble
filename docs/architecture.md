@@ -250,6 +250,12 @@ The UI drives a stateful dialog backed by `archive-preflight` and `archive`:
 5. **Final rescan**; any new/changed file not covered aborts with a new decision request. Then `git worktree remove [--force] <path>` with `--force` only when the user force-confirmed dirty state. Status `archived` only after success.
 6. Branch kept; offer delete. Recovery files kept until explicitly deleted (`DELETE /archives/:id`). A "Restore" action copies files back into a given directory, documented in the README.
 
+### 6.4a In-place workspaces (added October 15, 2026; docs/plan-v2.md Phase 1)
+
+`workspaces.kind` is `worktree` (everything above) or `inplace`: the user's own checkout, created by `POST /api/workspaces/inplace {path}` on behalf of `ensemble claude|codex`. `path` is the realpath of the git top level, `branch` the current branch (refreshed on every reuse), `base_branch` the repo default, `name` `checkout` (suffixed on clash), status `ready` immediately; no worktree, copy, or setup step runs, a port block is still allocated so scripts keep their contract. One non-archived workspace per path: launching inside a worktree Ensemble created returns that worktree's workspace. Archive of an `inplace` workspace is "forget": stop sessions, mark archived; the inventory, preservation, and removal steps of §6.3 are skipped entirely and the dialog says so. Reconcile marks it archived when the checkout is gone.
+
+The CLI (`server/cli.ts`) talks to the running server with the config token as a bearer header (API routes only, same user, same 0600 file; the token is never printed), reads `~/.ensemble/server.json` (host, port, tmux socket, written by the server on listen) to find it, launches through `SessionService.launch` with `cliArgs`, then attaches `tmux attach-session` with the caller's terminal. A session-level `pane-died` hook (`detach-client -t <tty>`, removed afterwards) detaches only that client when the agent exits, so the user is not left in the retained dead pane; the CLI then prints the exit code (and the pane's last lines when non-zero) and exits with it. `ENSEMBLE_INSIDE=1` is set in the agent environment; when present, `ensemble claude` runs the real binary directly so an alias cannot recurse. `--help`/`--version` are also passed straight through.
+
 ### 6.4 Reconcile on startup
 
 `git worktree prune` per repo, then diff `git worktree list --porcelain` against the DB (missing path → `archived` with a `missing` note; in-progress create operations are re-entered via §6.1). `tmux -L ensemble list-panes -a -F '#{session_name}\t#{pane_dead}\t#{pane_dead_status}\t#{pane_pid}'` → `process_state` per session; dead panes keep their exit code. Then spool drain (§7.6) before any `session.status` is broadcast.
@@ -325,6 +331,8 @@ The server keeps an advisory copy of the last known mode per CLI for the Doctor 
 - Codex: `codex -c 'hooks.<Event>=[{hooks=[{type="command",command="<node> <abs>/helpers/hook-capture.mjs codex"}]}]' … -c 'notify=["<node>","<abs>/helpers/codex-notify.mjs"]' ["<prompt>"]`. Resume: `codex … resume <cli_session_id>`. The hook command string is identical for every session (session id comes from `ENSEMBLE_SESSION_ID`), so Codex's trust hash is stable and the user trusts it once via `/hooks`. Ensemble never writes `~/.codex/*` and never passes `--dangerously-bypass-hook-trust`.
 
 **Workspace trust:** Claude holds back hooks from settings files, including `--settings`, until the folder is trusted interactively (confirmed October 15, 2026: `SessionStart` arrived within a second of accepting the dialog), and each worktree is a new folder. Ensemble takes no automatic action and does not pre-trust parent directories (decision §11.4). A session starts as `starting` with `freshness=unknown`; if the launcher reported a successful launch but no `SessionStart` has arrived after 20 s while the pane is alive, the UI shows: "No session events received yet. Check the terminal for trust or login prompts." The message makes no claim about the cause.
+
+User arguments from `ensemble claude|codex [args...]` are appended after Ensemble's own options (`validateCliArgs`): at most 64, each at most 8 KiB, no NUL; rejected for Claude: `-p`, `--print`, `--settings`, `--remote-control`, `--help`, `-h`, `--version`, `-v`; for Codex: `--help`, `-h`, `--version`, `-V`, and a first positional of `exec`, `e`, `login`, `logout`, `mcp`, `mcp-server`, `app-server`, `completion`, `apply`, `a`, `cloud`, `sandbox`, `debug`, `features`, `help`.
 
 ### 7.5 Resume
 
@@ -431,6 +439,7 @@ Each ends with green `pnpm typecheck && pnpm lint && pnpm test`, a conventional 
 4. **Workspace trust**: hint only, no automatic action, no parent-directory pre-trust; neutral timeout message as in §7.4.
 5. **Codex**: the `login status` contract was recorded on October 15, 2026 and the adapter implemented against it; unobserved modes still fail closed.
 6. **Ports**: UI default 4800; hook port persisted from 49152–65535.
+7. **Terminal-first launching (October 15, 2026)**: Ensemble does not adopt sessions started elsewhere; instead `ensemble claude|codex` launches through the normal path from the current checkout as an in-place workspace (§6.4a) and attaches the user's terminal. One agent per checkout is the intended use; worktrees remain the default for a second agent.
 
 ## 12. Dependency justification
 

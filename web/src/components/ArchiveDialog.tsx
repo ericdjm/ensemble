@@ -48,9 +48,28 @@ export function ArchiveDialog({
     setForceDirty(false);
   }, [workspace.id]);
 
+  const inplace = workspace.kind === "inplace";
   useEffect(() => {
+    if (inplace) return;
     load().catch((e: Error) => setError(e.message));
-  }, [load]);
+  }, [load, inplace]);
+
+  const forget = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api("POST", `/api/workspaces/${workspace.id}/archive`, {
+        inventoryHash: "",
+        forceDirty: false,
+        ignored: {},
+      });
+      finish();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const submit = async () => {
     if (!inv) return;
@@ -101,6 +120,33 @@ export function ArchiveDialog({
     navigateToWorkspace(null);
     onClose();
   };
+
+  if (inplace) {
+    return (
+      <Dialog title={`Forget ${workspace.name}`} onClose={onClose}>
+        <div className="space-y-3 text-sm">
+          <p>
+            This is your own checkout at <code className="break-all">{workspace.path}</code>.
+            Forgetting it stops any running sessions and removes the workspace from Ensemble.
+          </p>
+          <p className="font-medium">No files are touched and the branch is not changed.</p>
+          <p className="text-neutral-500">
+            Run <code>ensemble claude</code> or <code>ensemble codex</code> in that directory again
+            to bring it back.
+          </p>
+          {error && <p className="text-red-600">{error}</p>}
+          <div className="flex justify-end gap-2">
+            <button className="btn-ghost" onClick={onClose}>
+              Cancel
+            </button>
+            <button className="btn-danger" disabled={busy} onClick={forget}>
+              Forget workspace
+            </button>
+          </div>
+        </div>
+      </Dialog>
+    );
+  }
 
   if (done) {
     return (

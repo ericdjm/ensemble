@@ -68,9 +68,13 @@ export interface CreationState {
   };
 }
 
+/** "worktree": an isolated worktree Ensemble created; "inplace": the user's own checkout (Phase 1 of docs/plan-v2.md). */
+export type WorkspaceKind = "worktree" | "inplace";
+
 export interface Workspace {
   id: string;
   repoId: string;
+  kind: WorkspaceKind;
   name: string;
   branch: string;
   path: string;

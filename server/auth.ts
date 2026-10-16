@@ -46,6 +46,12 @@ export function originAllowed(
   return allowedHosts.has(url.host);
 }
 
+export function bearerMatches(header: string | undefined, expected: string): boolean {
+  if (typeof header !== "string" || !header.startsWith("Bearer ")) return false;
+  const presented = header.slice(7).trim();
+  return presented.length > 0 && tokensMatch(presented, expected);
+}
+
 export class BrowserSessions {
   private cache = new Set<string>();
   constructor(private db: Db) {
@@ -111,6 +117,8 @@ export async function registerAuth(
     const id = request.cookies[COOKIE_NAME];
     if (sessions.has(id)) return;
     if (request.url.startsWith("/api/")) {
+      // The local `ensemble claude|codex` CLI presents the same token as a bearer header (same user, same file).
+      if (bearerMatches(request.headers.authorization, opts.getToken())) return;
       return reply.code(401).send({ error: "unauthorized" });
     }
     return reply.code(401).type("text/html").send(LOGIN_REQUIRED_HTML);

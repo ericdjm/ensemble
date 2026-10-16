@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { buildApp } from "./app.js";
-import { defaultStateDir, loadConfig, rotateToken, statePaths } from "./config.js";
+import { runAgentCommand } from "./cli.js";
+import { defaultStateDir, loadConfig, rotateToken, statePaths, writeServerInfo } from "./config.js";
 import { openDb } from "./db/index.js";
 import { DEFAULT_UI_HOST, DEFAULT_UI_PORT, PRODUCT_NAME } from "../shared/brand.js";
 
@@ -8,8 +9,10 @@ export interface StartOptions {
   host: string;
   port: number;
   open: boolean;
-  command: "start" | "token" | "help";
+  command: "start" | "token" | "help" | "claude" | "codex";
   rotate: boolean;
+  /** Everything after `claude`/`codex`, passed to the agent verbatim. */
+  agentArgs: string[];
 }
 
 export function parseArgs(argv: string[]): StartOptions {
@@ -19,10 +22,15 @@ export function parseArgs(argv: string[]): StartOptions {
     open: true,
     command: "start",
     rotate: false,
+    agentArgs: [],
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === "--help" || arg === "-h") {
+    if (arg === "claude" || arg === "codex") {
+      opts.command = arg;
+      opts.agentArgs = argv.slice(i + 1);
+      break;
+    } else if (arg === "--help" || arg === "-h") {
       opts.command = "help";
     } else if (arg === "start" || arg === "token") {
       opts.command = arg;
@@ -56,6 +64,20 @@ function loginUrl(host: string, port: number, token: string): string {
 export async function main(argv: string[]): Promise<void> {
   const opts = parseArgs(argv);
   const stateDir = defaultStateDir();
+
+  if (opts.command === "claude" || opts.command === "codex") {
+    process.exitCode = await runAgentCommand({
+      agent: opts.command,
+      args: opts.agentArgs,
+      stateDir,
+      cwd: process.cwd(),
+      env: process.env,
+      stdout: (line) => console.log(line),
+      stderr: (line) => console.error(line),
+    });
+    return;
+  }
+
   let config = await loadConfig(stateDir);
 
   if (opts.command === "help") {
@@ -65,6 +87,11 @@ export async function main(argv: string[]): Promise<void> {
         "",
         "Usage: ensemble [start] [--host <addr>] [--port <n>] [--no-open]",
         "       ensemble token [--rotate]      print (or rotate) the login URL",
+        "       ensemble claude [args...]      run Claude Code in the current checkout, managed by Ensemble",
+        "       ensemble codex [args...]       run Codex in the current checkout, managed by Ensemble",
+        "",
+        "The claude/codex forms need a running server and an interactive terminal; the session appears in",
+        "the browser too, and detaching (Ctrl-b d) leaves it running. Tip: alias claude='ensemble claude'.",
         "",
         "State lives in ~/.ensemble (override with ENSEMBLE_STATE_DIR).",
       ].join("\n"),
@@ -93,6 +120,13 @@ export async function main(argv: string[]): Promise<void> {
     );
   }
   await app.fastify.listen({ host: opts.host, port: opts.port });
+  writeServerInfo(stateDir, {
+    host: opts.host,
+    port: opts.port,
+    pid: process.pid,
+    tmuxSocket: app.services.tmux.socketName,
+    startedAt: new Date().toISOString(),
+  });
   const url = loginUrl(opts.host, opts.port, config.uiToken);
   console.log(`${PRODUCT_NAME} listening on http://${opts.host}:${opts.port}`);
   console.log(

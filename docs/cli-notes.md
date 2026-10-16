@@ -98,6 +98,14 @@ Available on Pro, Max, Team, and Enterprise; API keys unsupported; Team/Enterpri
 - `node-pty` 1.1.0 installed through pnpm 12 lacks the execute bit on `prebuilds/darwin-arm64/spawn-helper`; a fresh install reproduces it. The server restores the bit at startup (`ensurePtyHelperExecutable`).
 - Vitest fixtures must spawn helpers asynchronously: a blocking `spawnSync` stalls the event loop that hosts the fake hook listener, so the helper's POST times out. This was a test-harness artefact, not a helper bug.
 
+## tmux session hooks (runtime-tested October 15, 2026)
+
+On tmux 3.8 with the bundled config, `set-hook -t =<session>: pane-died '<command>'` fires when the pane's program exits under `remain-on-exit on` (probe: a `run-shell` hook appended to a file; the pane stayed dead with status 3). `ensemble claude|codex` uses this with `detach-client -t <tty>` to release only the caller's terminal when the agent exits, then removes the hook with `set-hook -u`. Targets must use the `=name:` form, as elsewhere. Verified end to end under `node-pty` with the fake agent (`test/cli.test.ts`).
+
+### Real-binary check of `ensemble claude` (October 15, 2026)
+
+With the server running on 4800, `node bin/ensemble.js claude` was run from this checkout under `node-pty` (120×36) with Claude Code 2.1.300. The header printed the session id, browser link, and the in-place note; the Claude UI appeared in the attached terminal ("Opus 5.5 · Claude Max"); hooks arrived immediately because this checkout was already trusted (`authMode` subscription, conversation id captured, freshness current). Typing `/exit` needs two Enters in the TUI (the first accepts the autocomplete). After exit the `pane-died` hook detached the client and the CLI returned on its own with exit 0 after about 6 s total, printing "session ended (exit 0)"; the dead pane stayed in tmux for the browser. When the controlling pty is closed instead (SIGHUP), the session keeps running in tmux and the hook stays set on that session until the next CLI attach replaces it; this is harmless. No prompt was sent.
+
 ## Reproduced review cases
 
 ### Ignored files are not protected by a clean Git status

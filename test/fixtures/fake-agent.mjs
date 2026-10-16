@@ -100,6 +100,7 @@ if (argv[0] === "login" && argv[1] === "status") {
       "ANTHROPIC_AUTH_TOKEN",
       "OPENAI_API_KEY",
       "ENSEMBLE_SESSION_ID",
+      "ENSEMBLE_INSIDE",
     ];
     fs.writeFileSync(
       process.env.FAKE_ENV_FILE,

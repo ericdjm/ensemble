@@ -79,6 +79,14 @@ export function WorkspaceView({
             </h1>
           )}
           <StatusBadge status={workspace.status} />
+          {workspace.kind === "inplace" && (
+            <span
+              className="rounded bg-neutral-200 px-1.5 text-[10px] font-medium uppercase tracking-wide text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200"
+              title="Your own checkout; nothing was copied or set up, and forgetting it removes no files"
+            >
+              checkout
+            </span>
+          )}
           <span className="font-mono text-xs text-neutral-500">{workspace.branch}</span>
           <span className="text-xs text-neutral-500">port {workspace.port}</span>
           <span className="ml-auto flex gap-1">
@@ -100,7 +108,7 @@ export function WorkspaceView({
             </button>
             {workspace.status !== "archived" && (
               <button className="btn-ghost text-xs text-red-600" onClick={onArchive}>
-                Archive
+                {workspace.kind === "inplace" ? "Forget" : "Archive"}
               </button>
             )}
           </span>

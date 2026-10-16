@@ -145,10 +145,76 @@ function shellQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
+/** Arguments that would make the session non-interactive or override Ensemble's own flags. */
+const DENIED_CLI_ARGS: Record<Agent, ReadonlySet<string>> = {
+  claude: new Set([
+    "-p",
+    "--print",
+    "--settings",
+    "--remote-control",
+    "--help",
+    "-h",
+    "--version",
+    "-v",
+  ]),
+  codex: new Set(["--help", "-h", "--version", "-V"]),
+};
+/** Codex subcommands that are not an interactive session (checked on the first positional argument only). */
+const DENIED_CODEX_SUBCOMMANDS = new Set([
+  "exec",
+  "e",
+  "login",
+  "logout",
+  "mcp",
+  "mcp-server",
+  "app-server",
+  "completion",
+  "apply",
+  "a",
+  "cloud",
+  "sandbox",
+  "debug",
+  "features",
+  "help",
+]);
+export const MAX_CLI_ARGS = 64;
+export const MAX_CLI_ARG_LENGTH = 8192;
+
+/** Validates user-supplied CLI arguments passed through `ensemble claude|codex` (docs/plan-v2.md Phase 1). */
+export function validateCliArgs(agent: Agent, args: unknown): string[] {
+  if (args === undefined) return [];
+  if (!Array.isArray(args) || args.some((a) => typeof a !== "string"))
+    throw new WorkspaceError("cliArgs must be an array of strings");
+  const list = args as string[];
+  if (list.length > MAX_CLI_ARGS) throw new WorkspaceError(`at most ${MAX_CLI_ARGS} CLI arguments`);
+  let firstPositional: string | null = null;
+  for (const arg of list) {
+    if (arg.length > MAX_CLI_ARG_LENGTH || arg.includes("\0"))
+      throw new WorkspaceError("invalid CLI argument");
+    const bare = arg.includes("=") && arg.startsWith("--") ? arg.slice(0, arg.indexOf("=")) : arg;
+    if (DENIED_CLI_ARGS[agent].has(bare))
+      throw new WorkspaceError(
+        `${arg} is not allowed through Ensemble: sessions must stay interactive and keep Ensemble's hooks; run ${agent} directly instead`,
+      );
+    if (firstPositional === null && !arg.startsWith("-")) firstPositional = arg;
+  }
+  if (
+    agent === "codex" &&
+    firstPositional !== null &&
+    DENIED_CODEX_SUBCOMMANDS.has(firstPositional)
+  )
+    throw new WorkspaceError(
+      `codex ${firstPositional} is not an interactive session; run codex directly instead`,
+    );
+  return list;
+}
+
 export interface LaunchInput {
   workspaceId: string;
   agent: Agent;
   prompt?: string;
+  /** Extra arguments from `ensemble claude|codex [args...]`, already validated by validateCliArgs. */
+  cliArgs?: string[];
   remoteControl?: boolean;
   billingAck?: boolean;
   /** Resume this exact CLI conversation id (set by resume()). */
@@ -246,6 +312,7 @@ export class SessionService extends EventEmitter {
     const repo = getRepo(this.db, ws.repoId);
     if (!repo) throw new WorkspaceError("repo not found", 404);
     const cli = await this.resolveCli(input.agent);
+    const cliArgs = validateCliArgs(input.agent, input.cliArgs);
 
     const id = randomUUID();
     const dir = this.sessionDir(id);
@@ -295,6 +362,7 @@ export class SessionService extends EventEmitter {
       }
       if (input.resumeCliSessionId) options.push(input.resumeCliSessionId);
     }
+    options.push(...cliArgs);
 
     const optIn = this.config.billingOptIn;
     const manifest = write("launch.json", {
@@ -306,7 +374,7 @@ export class SessionService extends EventEmitter {
       remoteControlName,
       env: {
         strip: optIn ? [] : [...STRIPPED_ENV_VARS],
-        set: { ENSEMBLE_SESSION_DIR: dir, ENSEMBLE_SESSION_ID: id },
+        set: { ENSEMBLE_SESSION_DIR: dir, ENSEMBLE_SESSION_ID: id, ENSEMBLE_INSIDE: "1" },
       },
       auth: { require: "subscription", optIn, ack: input.billingAck === true },
       sessionDir: dir,
@@ -536,13 +604,14 @@ export class SessionService extends EventEmitter {
   }
 }
 
+/** Resolves a binary on the user's login-shell PATH; aliases (e.g. `alias claude='ensemble claude'`) are ignored. */
 function loginShellWhich(name: string): Promise<string | null> {
   if (!/^[a-z0-9_-]+$/i.test(name)) return Promise.resolve(null);
   const shell = process.env["SHELL"] ?? "/bin/zsh";
   return new Promise((resolve) => {
     execFile(
       shell,
-      ["-lc", `command -v ${name}`],
+      ["-lc", `unalias -a 2>/dev/null; command -v ${name}`],
       {
         timeout: 10_000,
         env: { HOME: process.env["HOME"] ?? "", PATH: process.env["PATH"] ?? "" },

@@ -34,6 +34,8 @@ export function statePaths(stateDir: string) {
   return {
     root: stateDir,
     config: path.join(stateDir, "config.json"),
+    /** Written by a running server so the CLI knows where to reach it. */
+    server: path.join(stateDir, "server.json"),
     db: path.join(stateDir, "ensemble.db"),
     logs: path.join(stateDir, "logs"),
     sessions: path.join(stateDir, "sessions"),
@@ -198,6 +200,47 @@ export async function loadConfig(stateDir: string): Promise<Config> {
   const config = validateConfig(JSON.parse(readFileSync(file, "utf8")));
   chmodSync(file, 0o600);
   return config;
+}
+
+export interface ServerInfo {
+  host: string;
+  port: number;
+  pid: number;
+  tmuxSocket: string;
+  startedAt: string;
+}
+
+export function writeServerInfo(stateDir: string, info: ServerInfo): void {
+  const file = statePaths(stateDir).server;
+  writeFileSync(file, JSON.stringify(info, null, 2) + "\n", { mode: 0o600 });
+  chmodSync(file, 0o600);
+}
+
+/** Reads server.json; null when absent or malformed (the CLI then tries the defaults). */
+export function readServerInfo(stateDir: string): ServerInfo | null {
+  try {
+    const raw = JSON.parse(readFileSync(statePaths(stateDir).server, "utf8")) as unknown;
+    if (!isRecord(raw)) return null;
+    const { host, port, pid, tmuxSocket, startedAt } = raw;
+    if (typeof host !== "string" || !Number.isInteger(port) || typeof tmuxSocket !== "string")
+      return null;
+    return {
+      host,
+      port: port as number,
+      pid: typeof pid === "number" ? pid : 0,
+      tmuxSocket,
+      startedAt: typeof startedAt === "string" ? startedAt : "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Loads config.json without creating it; null when Ensemble has never been started. */
+export function readConfigIfPresent(stateDir: string): Config | null {
+  const file = statePaths(stateDir).config;
+  if (!existsSync(file)) return null;
+  return validateConfig(JSON.parse(readFileSync(file, "utf8")));
 }
 
 export function rotateToken(stateDir: string, config: Config): Config {

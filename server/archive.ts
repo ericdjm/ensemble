@@ -75,6 +75,11 @@ export class ArchiveService {
   }
 
   async inventory(ws: Workspace): Promise<ArchiveInventory> {
+    if (ws.kind === "inplace")
+      throw new WorkspaceError(
+        "an in-place workspace is forgotten, not archived; nothing is inventoried or removed",
+        409,
+      );
     if (!existsSync(ws.path)) throw new WorkspaceError("worktree path does not exist", 409);
     const statusOut = await git(["status", "--porcelain=v1", "-z", "--untracked-files=all"], {
       cwd: ws.path,
@@ -180,6 +185,12 @@ export class ArchiveService {
   ): Promise<ArchiveRecord | null> {
     const ws = this.workspaces.get(workspaceId);
     if (ws.status === "archived") throw new WorkspaceError("already archived", 409);
+    if (ws.kind === "inplace") {
+      // Forget: stop the agents and drop the record. The checkout is the user's; never touch its files.
+      await this.stopProcesses(ws);
+      this.workspaces.markArchived(ws.id, null);
+      return null;
+    }
     if (!ws.creation.steps.worktree) {
       // Nothing was ever created on disk; just mark it.
       this.workspaces.markArchived(ws.id, null);
