@@ -49,6 +49,12 @@ export function summarizeEvent(type: string, toolName: string | null, payload: u
     case "SubagentStart":
     case "SubagentStop":
       return trim(p["agent_type"]) || trim(p["agent_id"]);
+    case "ensemble.handoff":
+      return p["direction"] === "sent"
+        ? `sent ${String(p["chars"] ?? "?")} chars to ${trim(p["toAgent"])}`
+        : `received ${String(p["chars"] ?? "?")} chars from ${trim(p["fromAgent"])}`;
+    case "ensemble.relay":
+      return `relay hop ${String(p["hop"] ?? "?")}${p["direction"] === "sent" ? " sent" : ""}`;
     default:
       return "";
   }

@@ -15,6 +15,8 @@ import { WorkspaceError, type WorkspaceService } from "./workspaces.js";
 import { ArchiveConflict, type ArchiveDecisions, type ArchiveService } from "./archive.js";
 import type { SessionService } from "./sessions.js";
 import type { PrService } from "./pr.js";
+import type { RelayService } from "./relay.js";
+import type { HookIngest } from "./hooks/ingest.js";
 import type { HookListener } from "./hooks/listener.js";
 import type { Tmux } from "./tmux.js";
 import { doctorReport } from "./doctor.js";
@@ -32,6 +34,8 @@ export interface Services {
   archive: ArchiveService;
   sessions: SessionService;
   pr: PrService;
+  relays: RelayService;
+  ingest: HookIngest;
   listener: HookListener;
   tmux: Tmux;
   config: Config;
@@ -47,7 +51,12 @@ function safeJson(v: unknown): unknown {
 }
 
 export function snapshot(s: Services): StateSnapshot {
-  return { repos: listRepos(s.db), workspaces: s.workspaces.list(), sessions: s.sessions.list() };
+  return {
+    repos: listRepos(s.db),
+    workspaces: s.workspaces.list(),
+    sessions: s.sessions.list(),
+    relays: s.relays.list(),
+  };
 }
 
 const idParam = {
@@ -439,6 +448,96 @@ export function registerRoutes(app: FastifyInstance, s: Services): void {
     },
   );
 
+  const appendEvent = (sessionId: string, type: string, payload: unknown) => {
+    try {
+      s.ingest.appendInternal(sessionId, type, payload);
+    } catch {
+      /* history is best-effort; delivery already happened */
+    }
+  };
+
+  app.get<{ Params: { id: string } }>(
+    "/api/sessions/:id/last-answer",
+    { schema: { params: idParam } },
+    async (request) => s.sessions.lastAnswer(request.params.id),
+  );
+
+  app.post<{ Params: { id: string }; Body: { targetSessionId: string; text: string } }>(
+    "/api/sessions/:id/handoff",
+    {
+      schema: {
+        params: idParam,
+        body: {
+          type: "object",
+          required: ["targetSessionId", "text"],
+          properties: {
+            targetSessionId: { type: "string", minLength: 1 },
+            text: { type: "string", minLength: 1, maxLength: 100000 },
+          },
+        },
+      },
+    },
+    async (request) =>
+      s.sessions.handoff(
+        request.params.id,
+        request.body.targetSessionId,
+        request.body.text,
+        appendEvent,
+      ),
+  );
+
+  app.post<{ Params: { id: string }; Body: { text: string } }>(
+    "/api/workspaces/:id/ask-all",
+    {
+      schema: {
+        params: idParam,
+        body: {
+          type: "object",
+          required: ["text"],
+          properties: { text: { type: "string", minLength: 1, maxLength: 100000 } },
+        },
+      },
+    },
+    async (request) => {
+      s.workspaces.get(request.params.id);
+      return s.sessions.askAll(request.params.id, request.body.text);
+    },
+  );
+
+  app.get("/api/relays", async () => s.relays.list());
+  app.post<{
+    Body: {
+      aSessionId: string;
+      bSessionId: string;
+      kickoff: string;
+      maxRounds?: number;
+      doneMarker?: string;
+    };
+  }>(
+    "/api/relays",
+    {
+      schema: {
+        body: {
+          type: "object",
+          required: ["aSessionId", "bSessionId", "kickoff"],
+          properties: {
+            aSessionId: { type: "string", minLength: 1 },
+            bSessionId: { type: "string", minLength: 1 },
+            kickoff: { type: "string", minLength: 1, maxLength: 100000 },
+            maxRounds: { type: "integer", minimum: 1, maximum: 20 },
+            doneMarker: { type: "string", minLength: 1, maxLength: 64 },
+          },
+        },
+      },
+    },
+    async (request, reply) => reply.code(202).send(await s.relays.start(request.body)),
+  );
+  app.post<{ Params: { id: string } }>(
+    "/api/relays/:id/stop",
+    { schema: { params: idParam } },
+    async (request) => s.relays.stop(request.params.id),
+  );
+
   app.post<{ Params: { id: string } }>(
     "/api/sessions/:id/remote-control",
     { schema: { params: idParam } },
@@ -517,6 +616,7 @@ export function registerRoutes(app: FastifyInstance, s: Services): void {
   const settingsView = (): SettingsView => ({
     billingOptIn: s.config.billingOptIn,
     remoteControlDefault: s.config.remoteControlDefault,
+    relayEnabled: s.config.relayEnabled,
     cliPaths: s.config.cliPaths,
     workspaceRoot: s.config.workspaceRoot,
     branchPrefix: s.config.branchPrefix,
@@ -532,6 +632,7 @@ export function registerRoutes(app: FastifyInstance, s: Services): void {
           properties: {
             billingOptIn: { type: "boolean" },
             remoteControlDefault: { type: "boolean" },
+            relayEnabled: { type: "boolean" },
             cliPaths: {
               type: "object",
               properties: { claude: { type: "string" }, codex: { type: "string" } },
@@ -548,6 +649,7 @@ export function registerRoutes(app: FastifyInstance, s: Services): void {
       if (b.billingOptIn !== undefined) s.config.billingOptIn = b.billingOptIn;
       if (b.remoteControlDefault !== undefined)
         s.config.remoteControlDefault = b.remoteControlDefault;
+      if (b.relayEnabled !== undefined) s.config.relayEnabled = b.relayEnabled;
       if (b.cliPaths) {
         const next: Config["cliPaths"] = {};
         for (const k of ["claude", "codex"] as const) {

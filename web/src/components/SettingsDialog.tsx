@@ -64,6 +64,19 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
           />
           Enable Remote Control by default for new Claude sessions
         </label>
+        <label className="flex items-start gap-2">
+          <input
+            type="checkbox"
+            checked={s.relayEnabled}
+            onChange={(e) => setS({ ...s, relayEnabled: e.target.checked })}
+            className="mt-1"
+          />
+          <span>
+            <strong>Allow bounded relays.</strong> Lets you start an automatic exchange between two
+            sessions: each finished answer is sent to the other session for at most N hops, or until
+            an answer contains a done marker. Off by default; handoffs stay manual.
+          </span>
+        </label>
         <label className="block">
           Path to <code>claude</code>{" "}
           <span className="text-neutral-500">(blank = login-shell PATH)</span>

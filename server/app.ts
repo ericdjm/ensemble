@@ -15,6 +15,7 @@ import { webDistDir } from "./paths.js";
 import { registerRoutes, snapshot, type Services } from "./routes.js";
 import { SessionService } from "./sessions.js";
 import { PrService } from "./pr.js";
+import { RelayService } from "./relay.js";
 import { registerTerminalBridge } from "./terminal.js";
 import { Tmux } from "./tmux.js";
 import { WorkspaceService } from "./workspaces.js";
@@ -86,6 +87,18 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     ...(opts.ghEnv ? { ghEnv: opts.ghEnv } : {}),
   });
   const ingest = new HookIngest(opts.db, sessions);
+  const relays = new RelayService({
+    db: opts.db,
+    config: opts.config,
+    sessions,
+    appendEvent: (sessionId, type, payload) => {
+      try {
+        ingest.appendInternal(sessionId, type, payload);
+      } catch {
+        /* best-effort history */
+      }
+    },
+  });
 
   const pendingBroadcasts: Array<() => void> = [];
   let hubRef: StateHub | null = null;
@@ -113,6 +126,8 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     archive,
     sessions,
     pr,
+    relays,
+    ingest,
     listener,
     tmux,
     config: opts.config,
@@ -195,6 +210,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   pr.on("changed", (workspaceId: string, info) =>
     hub.broadcast({ t: "pr.changed", workspaceId, pr: info }),
   );
+  relays.on("changed", (item) => hub.broadcast({ t: "relay.changed", item }));
   registerTerminalBridge(hub, { tmux, sessions, workspaces });
 
   let drainTimer: NodeJS.Timeout | null = null;
@@ -212,6 +228,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     }
   };
   const start = async () => {
+    relays.interruptAll();
     await listener.start();
     drain();
     drainTimer = setInterval(drain, 15_000);

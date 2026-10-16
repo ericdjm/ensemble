@@ -1,5 +1,4 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import * as pty from "node-pty";
@@ -11,18 +10,7 @@ import { packageRoot } from "../server/paths.js";
 import { ensurePtyHelperExecutable } from "../server/terminal.js";
 import { gitIn, makeTempRepo } from "./git-helpers.js";
 import { FAKE_AGENT } from "./helpers-session.js";
-import { makeTestApp, type TestEnv } from "./helpers.js";
-
-function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = net.createServer();
-    srv.once("error", reject);
-    srv.listen({ host: "127.0.0.1", port: 0 }, () => {
-      const { port } = srv.address() as net.AddressInfo;
-      srv.close(() => resolve(port));
-    });
-  });
-}
+import { freePort, makeTestApp, type TestEnv } from "./helpers.js";
 
 describe("parseArgs for agent commands", () => {
   it("captures everything after claude/codex verbatim", () => {

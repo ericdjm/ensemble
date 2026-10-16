@@ -1,7 +1,66 @@
-import { existsSync, readdirSync, readFileSync, rmSync, unlinkSync } from "node:fs";
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
+import type { EventEnvelope } from "../../shared/types.js";
 import { statePaths } from "../config.js";
 import { isEnvelope, type HookIngest } from "./ingest.js";
+import { withSpoolLock } from "./spool-lock.js";
+
+/**
+ * Allocates the next sequence number in a session's spool and writes the record, exactly like the
+ * hook helpers do, so server-originated events (handoffs, relays) share one ordered history.
+ * Returns the record path; the caller deletes it once the event is committed.
+ */
+export function enqueueLocal(
+  sessionDir: string,
+  fields: { sessionId: string; type: string; payload: unknown; source?: string },
+): { envelope: EventEnvelope; recordPath: string } {
+  return withSpoolLock(sessionDir, (spool) => {
+    let state = { generation: 1, seq: 0 };
+    try {
+      const s = JSON.parse(readFileSync(path.join(spool, "state.json"), "utf8")) as {
+        generation?: unknown;
+        seq?: unknown;
+      };
+      if (Number.isInteger(s.generation) && Number.isInteger(s.seq))
+        state = { generation: s.generation as number, seq: s.seq as number };
+    } catch {
+      /* fresh spool */
+    }
+    state.seq += 1;
+    const envelope: EventEnvelope = {
+      id: randomUUID(),
+      sessionId: fields.sessionId,
+      generation: state.generation,
+      seq: state.seq,
+      source: fields.source ?? "ensemble",
+      type: fields.type,
+      tool: null,
+      sourceTs: new Date().toISOString(),
+      truncated: false,
+      payload: fields.payload,
+    };
+    const recordPath = path.join(
+      spool,
+      `${state.generation}-${String(state.seq).padStart(10, "0")}.json`,
+    );
+    const tmp = `${recordPath}.tmp`;
+    writeFileSync(tmp, JSON.stringify(envelope), { mode: 0o600 });
+    renameSync(tmp, recordPath);
+    const stateTmp = path.join(spool, `state.json.${process.pid}.tmp`);
+    writeFileSync(stateTmp, JSON.stringify(state), { mode: 0o600 });
+    renameSync(stateTmp, path.join(spool, "state.json"));
+    return { envelope, recordPath };
+  });
+}
 
 export interface DrainSummary {
   ingested: number;

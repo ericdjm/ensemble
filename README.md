@@ -50,6 +50,16 @@ alias codex='ensemble codex'
 
 Inside a session `ENSEMBLE_INSIDE=1` is set, so the alias cannot recurse, and the real binary is resolved from your login-shell `PATH` with aliases ignored. One agent per checkout is the intended use: a second `ensemble claude` in the same checkout gets a warning in the browser, because two agents editing the same files conflict; use a workspace (⌘N) for the second one. "Forget" on an in-place workspace stops its sessions and drops the record; it never removes files.
 
+## Handoffs between sessions
+
+Agents do not talk to each other on their own. Ensemble captures each session's **last answer** (from the Claude Code `Stop` hook's `last_assistant_message`, or Codex's `notify` message; the transcript file is only a fallback) and shows it under the terminal. From there:
+
+- **Send to…** delivers it to any other running session as a prompt prefixed with `From <agent> in <repo>/<workspace> (Ensemble handoff):`, with templates (review this, implement this, summarize, free text) you can edit before sending. Multi-line text is pasted through tmux with bracketed paste, so it arrives as one prompt.
+- **Ask all** sends one prompt to every running session in a workspace.
+- **Relay with…** (off by default; enable in Settings) starts a bounded exchange between two idle sessions: each finished answer is sent to the other, for at most N hops, until an answer contains a done marker, or until you stop it. Every hop is an `ensemble.relay` event in both sessions' logs. Nothing resumes after a server restart.
+
+Handoffs and relays are typed into the receiving CLI exactly as if you had pasted them; they cannot answer permission prompts, and a busy target simply queues the text as its next prompt.
+
 ## Your subscription and credentials
 
 Ensemble behaves like a terminal multiplexer. It launches your own installed `claude` and `codex` binaries interactively, inside tmux, using the CLIs' own login. It never reads, copies, stores, or proxies your credentials or tokens, never implements a login flow of its own, and never uses headless or SDK modes. By default it removes API-key environment variables from agent sessions and, inside the session itself, asks the CLI for its non-secret authentication mode (`claude auth status --json`) before starting it. If the mode is not a subscription login the launch is refused with the reason shown in the terminal. An opt-in in Settings allows API-key billing with a visible warning; unverified modes additionally need a per-session acknowledgement and are never labelled subscription-verified. For Codex the same check uses `codex login status`; only a ChatGPT login counts as a subscription. An automated check in CI fails if the source code ever references the CLIs' credential files.

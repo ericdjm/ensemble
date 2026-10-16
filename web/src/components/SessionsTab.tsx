@@ -5,6 +5,9 @@ import { useUiState } from "../store.js";
 import { Dialog } from "./Dialog.js";
 import { AuthBadge, SessionStatusBadge, effectiveStatus } from "./SessionBadges.js";
 import { Terminal } from "./Terminal.js";
+import { AskAllDialog, HandoffDialog } from "./HandoffDialog.js";
+import { LastAnswerPanel, useLastAnswer } from "./LastAnswerPanel.js";
+import { RelayBanner, RelayDialog } from "./RelayDialog.js";
 
 function NewSessionDialog({
   workspace,
@@ -173,7 +176,9 @@ export function SessionsTab({
     [ui.snapshot, workspace.id],
   );
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<"none" | "new" | "resume">("none");
+  const [dialog, setDialog] = useState<"none" | "new" | "resume" | "handoff" | "ask-all" | "relay">(
+    "none",
+  );
   const [reply, setReply] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
@@ -189,6 +194,11 @@ export function SessionsTab({
     sessions.at(-1) ??
     null;
   const hasRunning = sessions.some((s) => s.processState === "running");
+  const runningCount = sessions.filter((s) => s.processState === "running").length;
+  const relays = (ui.snapshot?.relays ?? []).filter(
+    (r) => selected && (r.aSessionId === selected.id || r.bSessionId === selected.id),
+  );
+  const activeRelay = relays.find((r) => r.status === "running") ?? relays.at(-1) ?? null;
 
   const call = async (method: string, url: string, body?: unknown) => {
     setError(null);
@@ -226,13 +236,24 @@ export function SessionsTab({
             <SessionStatusBadge session={s} />
           </button>
         ))}
-        <button
-          className="btn-primary ml-auto text-xs"
-          disabled={workspace.status !== "ready"}
-          onClick={() => setDialog("new")}
-        >
-          + New session
-        </button>
+        <span className="ml-auto flex gap-1">
+          {runningCount > 1 && (
+            <button
+              className="btn-ghost text-xs"
+              onClick={() => setDialog("ask-all")}
+              title="Send one prompt to every running session in this workspace"
+            >
+              Ask all
+            </button>
+          )}
+          <button
+            className="btn-primary text-xs"
+            disabled={workspace.status !== "ready"}
+            onClick={() => setDialog("new")}
+          >
+            + New session
+          </button>
+        </span>
       </div>
 
       {!selected && (
@@ -321,6 +342,12 @@ export function SessionsTab({
               No session events received yet. Check the terminal for trust or login prompts.
             </p>
           )}
+          {activeRelay && <RelayBanner relay={activeRelay} session={selected} />}
+          <SelectedAnswer
+            session={selected}
+            onSend={() => setDialog("handoff")}
+            onRelay={ui.settings?.relayEnabled ? () => setDialog("relay") : null}
+          />
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="min-h-0 flex-1">
             <Terminal key={selected.id} target={`session:${selected.id}`} focus />
@@ -358,8 +385,51 @@ export function SessionsTab({
       {dialog === "resume" && selected && (
         <ResumeDialog session={selected} onClose={() => setDialog("none")} />
       )}
+      {dialog === "handoff" && selected && (
+        <HandoffFromSelected session={selected} onClose={() => setDialog("none")} />
+      )}
+      {dialog === "ask-all" && (
+        <AskAllDialog
+          workspaceId={workspace.id}
+          count={runningCount}
+          onClose={() => setDialog("none")}
+        />
+      )}
+      {dialog === "relay" && selected && (
+        <RelayDialog from={selected} onClose={() => setDialog("none")} />
+      )}
     </div>
   );
+}
+
+function SelectedAnswer({
+  session,
+  onSend,
+  onRelay,
+}: {
+  session: Session;
+  onSend: () => void;
+  onRelay: (() => void) | null;
+}) {
+  const answer = useLastAnswer(session);
+  return (
+    <div className="space-y-1">
+      <LastAnswerPanel session={session} answer={answer} onSend={onSend} />
+      {onRelay && session.processState === "running" && (
+        <div className="flex justify-end">
+          <button className="btn-ghost text-xs" onClick={onRelay} title="Bounded relay (opt-in)">
+            Relay with…
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HandoffFromSelected({ session, onClose }: { session: Session; onClose: () => void }) {
+  const answer = useLastAnswer(session);
+  if (session.lastAnswerAt && !answer) return null;
+  return <HandoffDialog from={session} answer={answer?.text ?? ""} onClose={onClose} />;
 }
 
 export { effectiveStatus };

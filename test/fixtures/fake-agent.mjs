@@ -3,7 +3,11 @@
 // - `auth status --json` prints {authMethod: $FAKE_AUTH_METHOD ?? "claude.ai"} (exit 1 when "none")
 // - otherwise: records argv to $FAKE_ARGV_FILE, fires hooks from the --settings file the way Claude Code
 //   would (command via /bin/sh with JSON on stdin), prints ENVCHECK lines, then reads stdin commands:
-//   "exit" (SessionEnd + exit 0), "crash" (exit 2), "tool <name>" (PreToolUse/PostToolUse), anything else echoes.
+//   "exit" (SessionEnd + exit 0), "crash" (exit 2), "tool <name>" (PreToolUse/PostToolUse),
+//   "reply <text>" (UserPromptSubmit + Stop carrying last_assistant_message), anything else echoes.
+//   $FAKE_INPUT_FILE records every received line; $FAKE_TRANSCRIPT_PATH overrides transcript_path;
+//   $FAKE_AUTO_REPLY makes any non-command input answer "<AUTO_REPLY> #<n>" after a short debounce
+//   (the reply also contains $FAKE_AUTO_REPLY_DONE_WORD once n reaches $FAKE_AUTO_REPLY_DONE_AT).
 import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -34,12 +38,14 @@ if (argv[0] === "login" && argv[1] === "status") {
 } else {
   if (process.env.FAKE_ARGV_FILE)
     fs.writeFileSync(process.env.FAKE_ARGV_FILE, JSON.stringify(argv));
-  const valueFlags = new Set(["--settings", "--resume", "--remote-control"]);
+  const valueFlags = new Set(["--settings", "--resume", "--remote-control", "-c"]);
   const flags = {};
+  const configs = [];
   const positionals = [];
   for (let i = 0; i < argv.length; i++) {
     if (valueFlags.has(argv[i])) {
-      flags[argv[i]] = argv[i + 1];
+      if (argv[i] === "-c") configs.push(argv[i + 1] ?? "");
+      else flags[argv[i]] = argv[i + 1];
       i++;
     } else if (!argv[i].startsWith("--")) {
       positionals.push(argv[i]);
@@ -53,6 +59,12 @@ if (argv[0] === "login" && argv[1] === "status") {
       hooks = {};
     }
   }
+  // Codex form: `-c hooks.<Event>=[{hooks=[{type="command",command="..."}]}]` (TOML, documented, unverified
+  // on the real binary); the fake honours it the same way so Codex sessions emit the same events.
+  for (const c of configs) {
+    const m = /^hooks\.(\w+)=.*command=("(?:[^"\\]|\\.)*")/.exec(c);
+    if (m) hooks[m[1]] = [{ hooks: [{ type: "command", command: JSON.parse(m[2]) }] }];
+  }
   const resumed = flags["--resume"] !== undefined;
   const sessionId = resumed
     ? flags["--resume"]
@@ -63,7 +75,7 @@ if (argv[0] === "login" && argv[1] === "status") {
     const payload = {
       hook_event_name,
       session_id: sessionId,
-      transcript_path: `/fake/${sessionId}.jsonl`,
+      transcript_path: process.env.FAKE_TRANSCRIPT_PATH ?? `/fake/${sessionId}.jsonl`,
       cwd: process.cwd(),
       ...extra,
     };
@@ -110,9 +122,25 @@ if (argv[0] === "login" && argv[1] === "status") {
   if (prompt) process.stdout.write(`PROMPT: ${prompt}\n`);
   fire("SessionStart", { source: resumed ? "resume" : "startup" });
 
+  let replies = 0;
+  const answer = (text) => {
+    fire("UserPromptSubmit", { prompt: text.slice(0, 200) });
+    replies += 1;
+    const doneAt = Number(process.env.FAKE_AUTO_REPLY_DONE_AT ?? 0);
+    const done =
+      doneAt > 0 && replies >= doneAt ? ` ${process.env.FAKE_AUTO_REPLY_DONE_WORD ?? "DONE"}` : "";
+    const payload = {
+      last_assistant_message: `${text} #${replies}${done}`,
+      stop_hook_active: false,
+    };
+    if (process.env.FAKE_STOP_WITHOUT_MESSAGE === "1") delete payload.last_assistant_message;
+    fire("Stop", payload);
+  };
+  let autoTimer = null;
   const rl = readline.createInterface({ input: process.stdin });
   rl.on("line", (line) => {
     const cmd = line.trim();
+    if (process.env.FAKE_INPUT_FILE) fs.appendFileSync(process.env.FAKE_INPUT_FILE, line + "\n");
     if (cmd === "exit") {
       fire("SessionEnd", { reason: "prompt_input_exit" });
       process.exit(0);
@@ -126,8 +154,14 @@ if (argv[0] === "login" && argv[1] === "status") {
     } else if (cmd.startsWith("fire ")) {
       const m = /^fire (\S+)\s*(.*)$/.exec(cmd);
       if (m) fire(m[1], m[2] ? JSON.parse(m[2]) : {});
+    } else if (cmd.startsWith("reply ")) {
+      answer(cmd.slice(6));
     } else {
       process.stdout.write(`> ${cmd}\n`);
+      if (process.env.FAKE_AUTO_REPLY && cmd) {
+        if (autoTimer) clearTimeout(autoTimer);
+        autoTimer = setTimeout(() => answer(process.env.FAKE_AUTO_REPLY), 400);
+      }
     }
   });
   rl.on("close", () => process.exit(0));

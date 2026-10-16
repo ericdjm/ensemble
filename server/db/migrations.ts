@@ -134,4 +134,26 @@ ALTER TABLE sessions ADD COLUMN cli_options_json TEXT NOT NULL DEFAULT '[]';
 ALTER TABLE workspaces ADD COLUMN kind TEXT NOT NULL DEFAULT 'worktree';
 `,
   },
+  {
+    id: 4,
+    sql: `
+ALTER TABLE sessions ADD COLUMN last_answer TEXT;
+ALTER TABLE sessions ADD COLUMN last_answer_at TEXT;
+ALTER TABLE sessions ADD COLUMN last_answer_source TEXT;
+CREATE TABLE relays (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+  a_session_id TEXT NOT NULL REFERENCES sessions(id),
+  b_session_id TEXT NOT NULL REFERENCES sessions(id),
+  awaiting_session_id TEXT,
+  max_rounds INTEGER NOT NULL,
+  rounds_done INTEGER NOT NULL DEFAULT 0,
+  done_marker TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('running','done','limit','stopped','error','interrupted')),
+  error TEXT,
+  created_at TEXT NOT NULL,
+  ended_at TEXT
+);
+`,
+  },
 ];

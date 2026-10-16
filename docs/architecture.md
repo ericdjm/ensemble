@@ -387,6 +387,14 @@ Process liveness overrides presentation: `dead`/`missing` shows "exited (code)" 
 
 ---
 
+### 7.7 Last answers, handoffs, relays (added October 15, 2026; docs/plan-v2.md Phase 2)
+
+- **Capture** (`server/answers.ts`): on `Stop` the ingest path stores `payload.last_assistant_message` (documented; runtime-verified on 2.1.300, see cli-notes) as `sessions.last_answer` (migration 4; capped at 16 KiB, source `stop-payload`). On Codex `agent-turn-complete` it stores `last-assistant-message` (`codex-notify`). Only when the Stop payload has no message does it read the tail (2 MiB) of `transcript_path` read-only and take the last assistant entry with text blocks (`transcript`; the format is documented as unstable, so this fails soft and is labelled in the UI). The `Session` object carries `lastAnswerAt`, `lastAnswerSource`, and a 240-character preview; the full text is `GET /api/sessions/:id/last-answer`.
+- **Delivery**: `SessionService.input` types single lines with `send-keys -l`; multi-line text goes through `Tmux.pasteLine` (`load-buffer` from a 0600 file in the session dir, `paste-buffer -p -d`, then Enter), which wraps the text in bracketed-paste markers when the CLI has requested them. Verified with the real Claude TUI: a two-line prompt arrived as one `UserPromptSubmit`.
+- **Handoff** `POST /api/sessions/:id/handoff {targetSessionId, text}`: prefixes `From <agent> in <repo>/<workspace> (Ensemble handoff):`, delivers, and records `ensemble.handoff` on both sessions. **Ask all** `POST /api/workspaces/:id/ask-all {text}` sends to every running session of the workspace.
+- **Internal events** (`enqueueLocal` in `server/hooks/spool.ts`): server-originated events take the next spool sequence number under the spool lock exactly like hook helpers, are ingested through `HookIngest`, and the record is deleted on commit, so one ordered history covers hooks and Ensemble actions.
+- **Relay** (`server/relay.ts`, table `relays`): opt-in via `config.relayEnabled`. `POST /api/relays {aSessionId, bSessionId, kickoff, maxRounds ≤ 20, doneMarker}` requires two distinct idle running sessions not already in a relay; the kickoff goes to A with a bracketed instruction naming the marker. On each `stop` event of the awaited session the service reads the captured answer; marker present → `done`; `rounds_done ≥ max_rounds` → `limit`; else it sends `From <agent> in <workspace>:` + answer to the other session (which must be idle, else `error`), increments the hop, and records `ensemble.relay` on both. `POST /api/relays/:id/stop` ends it; running relays become `interrupted` at startup. Hops are serialized through a promise chain so two Stop events cannot interleave.
+
 ## 8. Diff, PR, Doctor
 
 ### 8.1 Diff
@@ -439,7 +447,8 @@ Each ends with green `pnpm typecheck && pnpm lint && pnpm test`, a conventional 
 4. **Workspace trust**: hint only, no automatic action, no parent-directory pre-trust; neutral timeout message as in §7.4.
 5. **Codex**: the `login status` contract was recorded on October 15, 2026 and the adapter implemented against it; unobserved modes still fail closed.
 6. **Ports**: UI default 4800; hook port persisted from 49152–65535.
-7. **Terminal-first launching (October 15, 2026)**: Ensemble does not adopt sessions started elsewhere; instead `ensemble claude|codex` launches through the normal path from the current checkout as an in-place workspace (§6.4a) and attaches the user's terminal. One agent per checkout is the intended use; worktrees remain the default for a second agent.
+7. **Agent-to-agent communication (October 15, 2026)**: human-mediated handoffs by default; the relay is bounded, opt-in, two sessions only, and logged. No autonomous orchestrator. Delivery is by typing into the CLI (tmux paste), never through private IPC; Claude's cross-session messaging socket and `claude --resume <id> "prompt"` exist but are not used, so both CLIs are driven the same documented way.
+8. **Terminal-first launching (October 15, 2026)**: Ensemble does not adopt sessions started elsewhere; instead `ensemble claude|codex` launches through the normal path from the current checkout as an in-place workspace (§6.4a) and attaches the user's terminal. One agent per checkout is the intended use; worktrees remain the default for a second agent.
 
 ## 12. Dependency justification
 

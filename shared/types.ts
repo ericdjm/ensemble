@@ -131,6 +131,7 @@ export interface StateSnapshot {
   repos: Repo[];
   workspaces: Workspace[];
   sessions: Session[];
+  relays: Relay[];
 }
 
 export type ServerMessage =
@@ -138,6 +139,7 @@ export type ServerMessage =
   | { t: "repo.changed"; item: Repo }
   | { t: "workspace.changed"; item: Workspace }
   | { t: "session.changed"; item: Session }
+  | { t: "relay.changed"; item: Relay }
   | {
       t: "session.status";
       sessionId: string;
@@ -189,8 +191,36 @@ export interface Session {
   hookGeneration: number;
   lastSeq: number;
   pendingInputs: PendingInputs;
+  /** When the last answer was captured; the full text comes from GET /api/sessions/:id/last-answer. */
+  lastAnswerAt: string | null;
+  lastAnswerSource: "stop-payload" | "codex-notify" | "transcript" | null;
+  lastAnswerPreview: string | null;
   createdAt: string;
   startedAt: string | null;
+  endedAt: string | null;
+}
+
+export interface LastAnswer {
+  text: string | null;
+  at: string | null;
+  source: Session["lastAnswerSource"];
+}
+
+export type RelayStatus = "running" | "done" | "limit" | "stopped" | "error" | "interrupted";
+
+/** A bounded, opt-in exchange between two sessions (docs/plan-v2.md Phase 2). */
+export interface Relay {
+  id: string;
+  workspaceId: string;
+  aSessionId: string;
+  bSessionId: string;
+  awaitingSessionId: string | null;
+  maxRounds: number;
+  roundsDone: number;
+  doneMarker: string;
+  status: RelayStatus;
+  error: string | null;
+  createdAt: string;
   endedAt: string | null;
 }
 
@@ -252,6 +282,7 @@ export interface DoctorReport {
 export interface SettingsView {
   billingOptIn: boolean;
   remoteControlDefault: boolean;
+  relayEnabled: boolean;
   cliPaths: { claude?: string; codex?: string };
   workspaceRoot: string;
   branchPrefix: string;

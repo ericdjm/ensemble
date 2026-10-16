@@ -24,7 +24,9 @@ Implemented as described below; see `docs/architecture.md` §6.4a and `docs/acce
 - UI: sidebar shows in-place workspaces with a "checkout" marker; new-session warning covers the shared-checkout case.
 - Tests: CLI against a fake server? Prefer testing the service pieces (in-place workspace creation, arg validation, attach command construction) plus one integration test that runs `bin/ensemble.js claude` with the fake agent against a test app.
 
-## Phase 2: handoffs between sessions (~1–2 days; one owner check)
+## Phase 2: handoffs between sessions (~1–2 days; one owner check) — done October 15, 2026
+
+Implemented as described below; see `docs/architecture.md` §7.7 and `docs/acceptance.md` ("Plan v2 Phase 2"). The Claude `Stop` payload on 2.1.300 carries `last_assistant_message` (verified with one real two-line prompt, which also proved bracketed-paste delivery); the transcript fallback stays as a labelled best-effort path. The relay's "round" is one hop; the done marker defaults to `RELAY_DONE`; both sessions must be idle at each hop.
 
 - Capture "last answer" per session: Codex `notify` already carries `last-assistant-message`. For Claude, check whether the `Stop` hook payload includes the last assistant message on the installed version; if not, read the tail of the transcript (`transcript_path` from `SessionStart`, read-only, unstable format) and extract the last assistant text. Needs one real prompt on the owner's subscription to verify; ask first.
 - Store `last_answer` (capped, e.g. 16 KiB) on the session row; broadcast on change.

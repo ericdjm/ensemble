@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
-import { login, makeTestApp, TEST_PORT, type TestEnv } from "./helpers.js";
+import { freePort, login, makeTestApp, type TestEnv } from "./helpers.js";
 
 function connect(
   url: string,
@@ -23,12 +23,14 @@ function connect(
 describe("/ws", () => {
   let env: TestEnv;
   let url: string;
-  const origin = `http://127.0.0.1:${TEST_PORT}`;
+  let origin: string;
 
   beforeEach(async () => {
-    env = await makeTestApp();
-    await env.app.fastify.listen({ host: "127.0.0.1", port: TEST_PORT });
-    url = `ws://127.0.0.1:${TEST_PORT}/ws`;
+    const port = await freePort();
+    env = await makeTestApp({ port });
+    await env.app.fastify.listen({ host: "127.0.0.1", port });
+    url = `ws://127.0.0.1:${port}/ws`;
+    origin = `http://127.0.0.1:${port}`;
   });
   afterEach(async () => {
     await env.cleanup();

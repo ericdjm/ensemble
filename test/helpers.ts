@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from "node:fs";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { buildApp, type App } from "../server/app.js";
@@ -17,6 +18,18 @@ export interface TestEnv {
 }
 
 export const TEST_PORT = 4999;
+
+/** A loopback port that is free right now; tests that really listen use this instead of TEST_PORT. */
+export function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer();
+    srv.once("error", reject);
+    srv.listen({ host: "127.0.0.1", port: 0 }, () => {
+      const { port } = srv.address() as net.AddressInfo;
+      srv.close(() => resolve(port));
+    });
+  });
+}
 
 /** Builds an app with a temp state dir, a file DB, a private tmux socket, and no web assets. */
 export async function makeTestApp(

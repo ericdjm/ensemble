@@ -1,4 +1,6 @@
 import { execFile } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import { rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { TMUX_SOCKET_NAME } from "../shared/brand.js";
 import { packageRoot } from "./paths.js";
@@ -184,6 +186,25 @@ export class Tmux {
   /** Types literal text then Enter (quick reply). */
   async sendLine(name: string, text: string): Promise<void> {
     await this.run(["send-keys", "-t", `=${name}:`, "-l", "--", text]);
+    await this.run(["send-keys", "-t", `=${name}:`, "Enter"]);
+  }
+
+  /**
+   * Pastes multi-line text then presses Enter. The text goes through a tmux buffer loaded from a
+   * private temp file (never the command line), and `paste-buffer -p` wraps it in bracketed-paste
+   * markers when the application has requested them, so newlines do not submit early in a TUI.
+   */
+  async pasteLine(name: string, text: string, scratchDir: string): Promise<void> {
+    const tag = randomBytes(6).toString("hex");
+    const file = path.join(scratchDir, `paste-${tag}.txt`);
+    const buffer = `ens-${tag}`;
+    writeFileSync(file, text, { mode: 0o600 });
+    try {
+      await this.run(["load-buffer", "-b", buffer, file]);
+      await this.run(["paste-buffer", "-p", "-d", "-b", buffer, "-t", `=${name}:`]);
+    } finally {
+      rmSync(file, { force: true });
+    }
     await this.run(["send-keys", "-t", `=${name}:`, "Enter"]);
   }
 

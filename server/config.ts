@@ -18,6 +18,8 @@ export interface Config {
   cliPaths: { claude?: string; codex?: string };
   billingOptIn: boolean;
   remoteControlDefault: boolean;
+  /** Opt-in for bounded agent-to-agent relays (off by default). */
+  relayEnabled: boolean;
   /** Extra Host header values accepted by the UI listener (for --host setups). */
   allowedHosts: string[];
   spool: { payloadCapBytes: number; totalCapBytes: number };
@@ -91,6 +93,7 @@ export function defaultConfig(uiToken: string, hookPort: number): Config {
     cliPaths: {},
     billingOptIn: false,
     remoteControlDefault: false,
+    relayEnabled: false,
     allowedHosts: [],
     spool: { payloadCapBytes: 256 * 1024, totalCapBytes: 64 * 1024 * 1024 },
   };
@@ -174,6 +177,7 @@ export function validateConfig(raw: unknown): Config {
     cliPaths,
     billingOptIn: bool("billingOptIn", base.billingOptIn),
     remoteControlDefault: bool("remoteControlDefault", base.remoteControlDefault),
+    relayEnabled: bool("relayEnabled", base.relayEnabled),
     allowedHosts,
     spool,
   };

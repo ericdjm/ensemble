@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 import type {
   EventSummary,
+  Relay,
   ServerMessage,
   Session,
   StateSnapshot,
@@ -56,6 +57,13 @@ function upsert<T extends { id: string; createdAt: string }>(list: T[], item: T)
 function upsertWorkspace(ws: Workspace): void {
   if (!state.snapshot) return;
   setState({ snapshot: { ...state.snapshot, workspaces: upsert(state.snapshot.workspaces, ws) } });
+}
+
+function upsertRelay(r: Relay): void {
+  if (!state.snapshot) return;
+  setState({
+    snapshot: { ...state.snapshot, relays: upsert(state.snapshot.relays ?? [], r) },
+  });
 }
 
 function upsertSession(s: Session): void {
@@ -134,6 +142,9 @@ export function applyMessage(msg: ServerMessage): void {
       break;
     case "session.changed":
       upsertSession(msg.item);
+      break;
+    case "relay.changed":
+      upsertRelay(msg.item);
       break;
     case "session.status": {
       const current = state.snapshot?.sessions.find((s) => s.id === msg.sessionId);

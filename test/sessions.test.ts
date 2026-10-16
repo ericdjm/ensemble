@@ -6,7 +6,7 @@ import { registerRepo } from "../server/repos.js";
 import type { Workspace } from "../shared/types.js";
 import { makeTempRepo } from "./git-helpers.js";
 import { FAKE_AGENT } from "./helpers-session.js";
-import { login, makeTestApp, TEST_PORT, type TestEnv } from "./helpers.js";
+import { freePort, login, makeTestApp, type TestEnv } from "./helpers.js";
 
 async function waitFor<T>(
   fn: () => T | undefined | false | null,
@@ -27,9 +27,11 @@ describe("agent sessions (tmux + fake agent)", () => {
   let repoPath: string;
   let ws: Workspace;
   const extraAgentEnv: Record<string, string> = {};
+  let port: number;
 
   beforeEach(async () => {
-    env = await makeTestApp({ cliPath: FAKE_AGENT, extraAgentEnv });
+    port = await freePort();
+    env = await makeTestApp({ cliPath: FAKE_AGENT, extraAgentEnv, port });
     await env.app.start();
     repoPath = makeTempRepo();
     const repo = await registerRepo(env.db, repoPath);
@@ -184,15 +186,15 @@ describe("agent sessions (tmux + fake agent)", () => {
   });
 
   it("streams the terminal over /ws/term and accepts input", async () => {
-    await env.app.fastify.listen({ host: "127.0.0.1", port: TEST_PORT });
+    await env.app.fastify.listen({ host: "127.0.0.1", port });
     const cookie = await login(env);
     const s = await sessions().launch({ workspaceId: ws.id, agent: "claude" });
     await waitFor(() => (sessions().get(s.id).cliSessionId ? true : null), 15_000, "start");
     const received = await new Promise<string>((resolve, reject) => {
       const sock = new WebSocket(
-        `ws://127.0.0.1:${TEST_PORT}/ws/term?target=session:${s.id}&cols=100&rows=30`,
+        `ws://127.0.0.1:${port}/ws/term?target=session:${s.id}&cols=100&rows=30`,
         {
-          headers: { origin: `http://127.0.0.1:${TEST_PORT}`, cookie },
+          headers: { origin: `http://127.0.0.1:${port}`, cookie },
         },
       );
       let buf = "";
@@ -217,11 +219,11 @@ describe("agent sessions (tmux + fake agent)", () => {
   });
 
   it("rejects terminal targets that do not exist", async () => {
-    await env.app.fastify.listen({ host: "127.0.0.1", port: TEST_PORT });
+    await env.app.fastify.listen({ host: "127.0.0.1", port });
     const cookie = await login(env);
     const status = await new Promise<number>((resolve) => {
-      const sock = new WebSocket(`ws://127.0.0.1:${TEST_PORT}/ws/term?target=session:nope`, {
-        headers: { origin: `http://127.0.0.1:${TEST_PORT}`, cookie },
+      const sock = new WebSocket(`ws://127.0.0.1:${port}/ws/term?target=session:nope`, {
+        headers: { origin: `http://127.0.0.1:${port}`, cookie },
       });
       sock.on("unexpected-response", (_r, res) => resolve(res.statusCode ?? 0));
       sock.on("error", () => resolve(-1));

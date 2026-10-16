@@ -3,7 +3,8 @@ import { EventEmitter } from "node:events";
 import { execFile } from "node:child_process";
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { Agent, PendingInputs, Session } from "../shared/types.js";
+import type { Agent, LastAnswer, PendingInputs, Session } from "../shared/types.js";
+import { answerPreview } from "./answers.js";
 import type { Config } from "./config.js";
 import { statePaths } from "./config.js";
 import type { Db } from "./db/index.js";
@@ -72,6 +73,9 @@ export interface SessionRow {
   last_seq: number;
   pending_inputs_json: string;
   hook_token_hash: string | null;
+  last_answer: string | null;
+  last_answer_at: string | null;
+  last_answer_source: Session["lastAnswerSource"];
   created_at: string;
   started_at: string | null;
   ended_at: string | null;
@@ -111,6 +115,9 @@ export function rowToSession(r: SessionRow): Session {
     hookGeneration: r.hook_generation,
     lastSeq: r.last_seq,
     pendingInputs: pending,
+    lastAnswerAt: r.last_answer_at,
+    lastAnswerSource: r.last_answer_source,
+    lastAnswerPreview: answerPreview(r.last_answer),
     createdAt: r.created_at,
     startedAt: r.started_at,
     endedAt: r.ended_at,
@@ -474,10 +481,71 @@ export class SessionService extends EventEmitter {
     });
   }
 
+  /** Types text into the session and submits it. Multi-line text is pasted (bracketed when the CLI asks for it). */
   async input(id: string, text: string): Promise<void> {
     const s = this.get(id);
     if (s.processState !== "running") throw new WorkspaceError("session is not running", 409);
-    await this.tmux.sendLine(s.tmuxName, text);
+    if (text.includes("\n") || text.includes("\r"))
+      await this.tmux.pasteLine(s.tmuxName, text, this.sessionDir(id));
+    else await this.tmux.sendLine(s.tmuxName, text);
+  }
+
+  /** Full text of the captured last answer (docs/plan-v2.md Phase 2). */
+  lastAnswer(id: string): LastAnswer {
+    const r = this.row(id);
+    return { text: r.last_answer, at: r.last_answer_at, source: r.last_answer_source };
+  }
+
+  /** Delivers `text` to `targetId` as a handoff from `fromId`, recording an ensemble.handoff event on both. */
+  async handoff(
+    fromId: string,
+    targetId: string,
+    text: string,
+    appendEvent: (sessionId: string, type: string, payload: unknown) => void,
+  ): Promise<{ delivered: number }> {
+    if (fromId === targetId) throw new WorkspaceError("cannot hand off a session to itself");
+    const from = this.get(fromId);
+    const target = this.get(targetId);
+    if (target.processState !== "running")
+      throw new WorkspaceError("target session is not running", 409);
+    const body = text.trim();
+    if (!body) throw new WorkspaceError("nothing to send");
+    const header = `From ${from.agent} in ${this.workspaceLabel(from.workspaceId)} (Ensemble handoff):`;
+    await this.input(targetId, `${header}\n${body}`);
+    const payload = {
+      fromSessionId: from.id,
+      fromAgent: from.agent,
+      toSessionId: target.id,
+      toAgent: target.agent,
+      chars: body.length,
+    };
+    appendEvent(target.id, "ensemble.handoff", { ...payload, direction: "received" });
+    appendEvent(from.id, "ensemble.handoff", { ...payload, direction: "sent" });
+    return { delivered: body.length };
+  }
+
+  /** Sends one prompt to every running session in a workspace. */
+  async askAll(workspaceId: string, text: string): Promise<{ sent: string[] }> {
+    const body = text.trim();
+    if (!body) throw new WorkspaceError("nothing to send");
+    const sent: string[] = [];
+    for (const s of this.listForWorkspace(workspaceId)) {
+      if (s.processState !== "running") continue;
+      await this.input(s.id, body);
+      sent.push(s.id);
+    }
+    if (sent.length === 0) throw new WorkspaceError("no running sessions in this workspace", 409);
+    return { sent };
+  }
+
+  workspaceLabel(workspaceId: string): string {
+    try {
+      const ws = this.workspaces.get(workspaceId);
+      const repo = getRepo(this.db, ws.repoId);
+      return repo ? `${repo.name}/${ws.name}` : ws.name;
+    } catch {
+      return "workspace";
+    }
   }
 
   async sendCommand(id: string, command: string): Promise<void> {
