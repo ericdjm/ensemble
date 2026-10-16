@@ -31,10 +31,11 @@ function SessionDots({ sessions }: { sessions: Session[] }) {
     : statuses.includes("working")
       ? "working"
       : "idle";
+  const names = live.map((s) => s.label ?? s.agent).join(", ");
   return (
     <span
       className="flex items-center gap-1"
-      title={`${live.length} session${live.length === 1 ? "" : "s"}: ${title}`}
+      title={`${live.length} session${live.length === 1 ? "" : "s"} (${names}): ${title}`}
     >
       <span className={`inline-block h-2 w-2 rounded-full ${cls}`} />
       {live.length > 1 && <span className="text-[10px] text-neutral-500">{live.length}</span>}

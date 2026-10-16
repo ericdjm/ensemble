@@ -2,6 +2,8 @@
 
 Agreed with the owner on October 15, 2026 after v1 (M0–M7) shipped. Build in order; each phase ends with tests, a commit, and a push, as in v1.
 
+**Status: all four phases shipped on October 15, 2026.** Remaining owner-only checks are listed in `docs/acceptance.md` (a real `claude attach` through Ensemble, a real handoff between two live subscription sessions, Remote Control on the phone, a real Codex session, a real PR).
+
 ## Decisions and pushback already settled
 
 - Ensemble does not adopt arbitrary foreground sessions started in another terminal. They cannot be moved into tmux and hooks cannot be injected after launch. Instead Ensemble becomes the launcher you call from the terminal (Phase 1).
@@ -40,7 +42,9 @@ Implemented as described below; see `docs/architecture.md` §7.8. `claude agents
 
 - `claude agents --json` to list `--bg` sessions; open a terminal by running `claude attach <id>` inside an Ensemble-owned tmux session. Status from the JSON and transcript, not hooks (weaker needs-input). Claude only. Skip unless the owner uses `--bg`.
 
-## Phase 4: small admin wins (~0.5 day)
+## Phase 4: small admin wins (~0.5 day) — done October 15, 2026
+
+Implemented as described below; see `docs/architecture.md` §7.9.
 
 - Session labels and notes, pin to top, per-workspace activity strip with each agent's latest answer side by side.
 

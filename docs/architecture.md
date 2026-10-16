@@ -399,6 +399,10 @@ Process liveness overrides presentation: `dead`/`missing` shows "exited (code)" 
 
 `server/claude-agents.ts` runs `claude agents --json --all` (documented fields: `cwd`, `kind`, `startedAt`, `id`, `state`, `pid`, `status`, `waitingFor`, `sessionId`, `name`; verified on 2.1.300, which also lists interactive sessions) with the API-key variables stripped unless opted in, never throws, and annotates each entry with the Ensemble session that launched or adopted it (`cliSessionId` match or `claude_agent_id`) and the workspace whose path equals its `cwd`. `POST /api/claude-agents/:id/attach` creates or reuses the in-place workspace for the session's `cwd` (§6.4a; refused when it is not a git checkout) and launches through the normal launcher with options `attach <id>` and no `--settings` (migration 5: `sessions.adopted`, `sessions.claude_agent_id`; `cli_session_id` is set from the listing so Resume works). While an adopted session runs, `refreshAdopted` polls the listing every 5 s and maps `status` (busy → working, waiting → needs_input with `prompt` or `agentInput` from `waitingFor`, idle → idle; `state` only as a fallback) into the session row with freshness `current`, or `stale` when the listing fails. `--bg`/`--background` are rejected by `ensemble claude`. Interactive sessions are listed but not adoptable (decision 11.7).
 
+### 7.9 Labels, notes, pins, activity strip (added October 15, 2026; docs/plan-v2.md Phase 4)
+
+`PATCH /api/sessions/:id {label?, notes?, pinned?}` (label ≤ 80 chars, notes ≤ 20 000, empty strings clear; columns from migration 5) updates the row and broadcasts `session.changed`. The UI orders a workspace's sessions pinned first, then running, then by creation time (`orderSessions`), shows the label in chips, cards, and sidebar tooltips, and renders `ActivityStrip` when at least two sessions are running, pinned, or carry an answer. Notes are shown under the session toolbar and as tooltips; they are never delivered to any agent.
+
 ## 8. Diff, PR, Doctor
 
 ### 8.1 Diff

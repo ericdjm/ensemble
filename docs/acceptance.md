@@ -57,6 +57,19 @@ Spec §8, assessed on October 15, 2026. "Automated" means a Vitest test on `maco
 | Status follows the listing (busy/waiting/idle), stale on listing failure; second attach refused; non-git cwd refused  | Automated          | `test/claude-agents.test.ts`                                                                                                            |
 | A real `claude attach` through Ensemble (terminal takeover, detach behaviour)                                         | Owner              | Needs a `claude --bg` session of the owner's; not run here to avoid resuming their conversations                                        |
 
+## Plan v2 Phase 4 (October 15, 2026): labels, notes, pins, activity strip
+
+| Item                                                                                               | Status    | Evidence                                                                                  |
+| -------------------------------------------------------------------------------------------------- | --------- | ----------------------------------------------------------------------------------------- |
+| Label/notes/pin set, cleared, validated, partially updated, and broadcast                          | Automated | `test/session-meta.test.ts`                                                               |
+| Chips ordered pinned first; labels shown; activity strip with status and latest answer per session | Manual    | Reviewed in the browser with two labelled sessions (one pinned) in the checkout workspace |
+
+## Owner-only checks after plan v2
+
+- A real `claude attach` through Ensemble (Phase 3).
+- A real handoff between two live sessions on the owner's subscription (the fake-agent tests cover delivery and logging; one real two-line prompt proved paste delivery).
+- The v1 items above: Remote Control on the phone, a real Codex session, a real PR, the fresh-Mac quickstart, a live Claude permission prompt.
+
 ## Known limitations
 
 - Codex: hook injection via `-c` and the one-time `/hooks` trust flow are unverified against the installed binary; only `login status` was verified. Needs-input detection is best-effort until hooks are trusted.

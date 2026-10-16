@@ -8,6 +8,8 @@ import { Terminal } from "./Terminal.js";
 import { AskAllDialog, HandoffDialog } from "./HandoffDialog.js";
 import { LastAnswerPanel, useLastAnswer } from "./LastAnswerPanel.js";
 import { RelayBanner, RelayDialog } from "./RelayDialog.js";
+import { ActivityStrip, orderSessions, sessionTitle } from "./ActivityStrip.js";
+import { SessionMetaDialog } from "./SessionMetaDialog.js";
 
 function NewSessionDialog({
   workspace,
@@ -172,13 +174,14 @@ export function SessionsTab({
 }) {
   const ui = useUiState();
   const sessions = useMemo(
-    () => (ui.snapshot?.sessions ?? []).filter((s) => s.workspaceId === workspace.id),
+    () =>
+      orderSessions((ui.snapshot?.sessions ?? []).filter((s) => s.workspaceId === workspace.id)),
     [ui.snapshot, workspace.id],
   );
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<"none" | "new" | "resume" | "handoff" | "ask-all" | "relay">(
-    "none",
-  );
+  const [dialog, setDialog] = useState<
+    "none" | "new" | "resume" | "handoff" | "ask-all" | "relay" | "meta"
+  >("none");
   const [reply, setReply] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
@@ -225,14 +228,21 @@ export function SessionsTab({
 
   return (
     <div className="flex h-full flex-col gap-2">
+      <ActivityStrip
+        sessions={sessions}
+        selectedId={selected?.id ?? null}
+        onSelect={setSelectedId}
+      />
       <div className="flex flex-wrap items-center gap-2">
         {sessions.map((s) => (
           <button
             key={s.id}
             className={`flex items-center gap-2 rounded-md border px-2 py-1 text-xs ${selected?.id === s.id ? "border-neutral-900 dark:border-neutral-100" : "border-neutral-200 dark:border-neutral-800"}`}
             onClick={() => setSelectedId(s.id)}
+            title={s.label ? `${s.agent}${s.notes ? `\n${s.notes}` : ""}` : (s.notes ?? undefined)}
           >
-            <span className="font-medium">{s.agent}</span>
+            {s.pinned && <span aria-label="pinned">📌</span>}
+            <span className="font-medium">{sessionTitle(s)}</span>
             <SessionStatusBadge session={s} />
           </button>
         ))}
@@ -286,6 +296,13 @@ export function SessionsTab({
               tmux -L ensemble attach -t {selected.tmuxName}
             </span>
             <span className="ml-auto flex gap-1">
+              <button
+                className="btn-ghost"
+                onClick={() => setDialog("meta")}
+                title="Label, notes, pin"
+              >
+                Label…
+              </button>
               {selected.processState === "running" &&
                 selected.agent === "claude" &&
                 selected.authMode !== "other" &&
@@ -350,6 +367,14 @@ export function SessionsTab({
               No session events received yet. Check the terminal for trust or login prompts.
             </p>
           )}
+          {selected.notes && (
+            <p
+              className="line-clamp-2 whitespace-pre-wrap rounded bg-neutral-50 px-2 py-1 text-xs text-neutral-600 dark:bg-neutral-900 dark:text-neutral-400"
+              title={selected.notes}
+            >
+              {selected.notes}
+            </p>
+          )}
           {activeRelay && <RelayBanner relay={activeRelay} session={selected} />}
           <SelectedAnswer
             session={selected}
@@ -405,6 +430,9 @@ export function SessionsTab({
       )}
       {dialog === "relay" && selected && (
         <RelayDialog from={selected} onClose={() => setDialog("none")} />
+      )}
+      {dialog === "meta" && selected && (
+        <SessionMetaDialog session={selected} onClose={() => setDialog("none")} />
       )}
     </div>
   );
